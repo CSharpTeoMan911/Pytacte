@@ -10,18 +10,27 @@ import VisibilityOff from '@mui/icons-material/VisibilityOff';
 import CustomAppBar from '#/components/CustomAppBar';
 import RootPanel from '#/components/RootPanel';
 import LogoComponent from '#/components/LogoComponent';
-import logo from '../images/Firebase-Logo.png';
+import NotificationSystem from '#/components/NotificationSystem';
+import googleLogo from '../images/google.png';
 
 export const Route = createFileRoute('/login')({ component: Login });
 
-function handleAuthentication(email: string, password: string, isRegistering: boolean) {
+function handleAuthentication(email: string, password: string, repeatPassword: string, isRegistering: boolean, setNotificationText: (text: string) => void, setNotificationType: (type: 'success' | 'error' | 'warning' | 'info') => void, setNotificationOpen: (open: boolean) => void ) {
     if (isRegistering) {
         console.log('Registering with email:', email, 'and password:', password);
         // Implement registration logic here
     } else {
+        setNotificationText('Logging in...');
+        setNotificationType('info');
+        setNotificationOpen(true);
         console.log('Logging in with email:', email, 'and password:', password);
         // Implement login logic here
     }
+}
+
+function notificationCloseCallback() {
+    console.log('Notification closed');
+    // Implement any additional logic needed when the notification is closed
 }
 
 
@@ -33,9 +42,21 @@ function Login() {
     const [password, setPassword] = useState('');
     const [repeatPassword, setRepeatPassword] = useState('');
 
+    const [notificationText, setNotificationText] = useState('');
+    const [notificationType, setNotificationType] = useState<'success' | 'error' | 'warning' | 'info'>('info');
+    const [notificationOpen, setNotificationOpen] = useState(false);
 
     return (
         <RootPanel background_color="#d9d9da">
+            {notificationOpen && (
+                <NotificationSystem
+                    notificationText={notificationText}
+                    notificationType={notificationType}
+                    openState={notificationOpen}
+                    setOpenState={setNotificationOpen}
+                    onCloseCallback={notificationCloseCallback}
+                />
+            )}
             <CustomAppBar
                 logoWidth="50px"
                 logoHeight="50px"
@@ -117,9 +138,17 @@ function Login() {
                                 onChange={(e) => setRepeatPassword(e.target.value)}
                             />
                         )}
-                        <Button className="auth-submit" type="button" variant="contained" fullWidth onClick={() => handleAuthentication(email, password, isRegistering)}>
+                        <Button className="auth-submit" type="button" variant="contained" fullWidth onClick={() => handleAuthentication(email, password, repeatPassword, isRegistering, setNotificationText, setNotificationType, setNotificationOpen)}>
                             {isRegistering ? 'Register' : 'Sign in'}
                         </Button>
+                        {!isRegistering && (
+                            <Button className="auth-google-submit" type="button" variant="contained" fullWidth>
+                                <span className="auth-google-content">
+                                    <img className="auth-google-logo" src={googleLogo} alt="" />
+                                    <span>Sign in with Google</span>
+                                </span>
+                            </Button>
+                        )}
                     </div>
 
                     {isRegistering && (

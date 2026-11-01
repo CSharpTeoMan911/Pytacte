@@ -93,6 +93,40 @@ body {
   background-color: #183d59 !important;
 }
 
+.auth-google-submit.MuiButton-root {
+  min-height: 48px;
+  border: 2px solid #183d59 !important;
+  border-radius: 10px !important;
+  background-color: #fff !important;
+  box-shadow: none !important;
+  color: #111 !important;
+  font-weight: 700 !important;
+  text-transform: none !important;
+}
+
+.auth-google-submit.MuiButton-root:hover,
+.auth-google-submit.MuiButton-root:focus-visible {
+  border-color: dodgerblue !important;
+  background-color: #fff !important;
+  box-shadow: none !important;
+}
+
+.auth-google-content {
+  display: flex;
+  width: 100%;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.auth-google-logo {
+  margin-right: 8px;
+  width: 2em;
+  height: 1.8em;
+  object-fit: contain;
+}
+
 .auth-register-prompt {
   margin-top: 22px !important;
   color: #61717c;
@@ -109,5 +143,47 @@ body {
 
 .auth-register-link:hover {
   color: #1683b8;
+}
+
+.notification-popover-paper {
+  padding: 10px;
+  background-color: #f8f8f8 !important;
+}
+
+.notification-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #183d59;
+}
+
+.notification-text {
+  flex: 1;
+}
+
+.notification-close {
+  flex: 0 0 auto;
+  margin: -4px -4px -4px 4px !important;
+  color: #183d59 !important;
+}
+
+.notification-icon {
+  flex: 0 0 auto;
+}
+
+.notification-content--success .notification-icon {
+  color: #2e7d32;
+}
+
+.notification-content--error .notification-icon {
+  color: #d32f2f;
+}
+
+.notification-content--warning .notification-icon {
+  color: #ed6c02;
+}
+
+.notification-content--info .notification-icon {
+  color: #0288d1;
 }
 
