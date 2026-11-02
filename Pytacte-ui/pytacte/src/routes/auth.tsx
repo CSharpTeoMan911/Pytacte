@@ -12,18 +12,57 @@ import RootPanel from '#/components/RootPanel';
 import LogoComponent from '#/components/LogoComponent';
 import NotificationSystem from '#/components/NotificationSystem';
 import googleLogo from '../images/google.png';
+import { loginAccount, loginWithGoogle, registerAccount } from '../firebase/firebase_auth';
 
-export const Route = createFileRoute('/login')({ component: Login });
+export const Route = createFileRoute('/auth')({ component: Login });
 
-function handleAuthentication(email: string, password: string, repeatPassword: string, isRegistering: boolean, setNotificationText: (text: string) => void, setNotificationType: (type: 'success' | 'error' | 'warning' | 'info') => void, setNotificationOpen: (open: boolean) => void ) {
+async function handleAuthentication(isGoogleLogIn: boolean, email: string, password: string, repeatPassword: string, isRegistering: boolean, setNotificationText: (text: string) => void, setNotificationType: (type: 'success' | 'error' | 'warning' | 'info') => void, setNotificationOpen: (open: boolean) => void) {
     if (isRegistering) {
         console.log('Registering with email:', email, 'and password:', password);
-        // Implement registration logic here
-    } else {
-        setNotificationText('Logging in...');
-        setNotificationType('info');
+
+        const passwordsMatch = password === repeatPassword;
+        if (!passwordsMatch) {
+            setNotificationText('Passwords do not match.');
+            setNotificationType('error');
+            setNotificationOpen(true);
+            return;
+        }
+
+        const [status, message] = await registerAccount(email, password)
+
+        if (status) {
+            setNotificationText(message);
+            setNotificationType('success');
+        } else {
+            setNotificationText(message);
+            setNotificationType('error');
+        }
         setNotificationOpen(true);
-        console.log('Logging in with email:', email, 'and password:', password);
+    } else {
+        if (isGoogleLogIn) {
+            const [status, message] = await loginWithGoogle();
+
+            if (status) {
+                setNotificationText(message);
+                setNotificationType('success');
+            } else {
+                setNotificationText(message);
+                setNotificationType('error');
+            }
+            setNotificationOpen(true);
+        }
+        else {
+            const [status, message] = await loginAccount(email, password);
+
+            if (status) {
+                setNotificationText(message);
+                setNotificationType('success');
+            } else {
+                setNotificationText(message);
+                setNotificationType('error');
+            }
+            setNotificationOpen(true);
+        }
         // Implement login logic here
     }
 }
@@ -138,11 +177,11 @@ function Login() {
                                 onChange={(e) => setRepeatPassword(e.target.value)}
                             />
                         )}
-                        <Button className="auth-submit" type="button" variant="contained" fullWidth onClick={() => handleAuthentication(email, password, repeatPassword, isRegistering, setNotificationText, setNotificationType, setNotificationOpen)}>
+                        <Button className="auth-submit" type="button" variant="contained" fullWidth onClick={() => handleAuthentication(false, email, password, repeatPassword, isRegistering, setNotificationText, setNotificationType, setNotificationOpen)}>
                             {isRegistering ? 'Register' : 'Sign in'}
                         </Button>
                         {!isRegistering && (
-                            <Button className="auth-google-submit" type="button" variant="contained" fullWidth>
+                            <Button className="auth-google-submit" type="button" variant="contained" fullWidth onClick={() => handleAuthentication(true, email, password, repeatPassword, isRegistering, setNotificationText, setNotificationType, setNotificationOpen)}>
                                 <span className="auth-google-content">
                                     <img className="auth-google-logo" src={googleLogo} alt="" />
                                     <span>Sign in with Google</span>

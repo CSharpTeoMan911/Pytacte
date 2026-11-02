@@ -6,7 +6,7 @@ export const Route = createFileRoute('/')({ component: Home })
 
 function Home() {
   if(!getIfUserLoggedIn())
-    window.location.href = '/login';
+    window.location.href = '/auth';
 
   return (
     <div className="p-8">
