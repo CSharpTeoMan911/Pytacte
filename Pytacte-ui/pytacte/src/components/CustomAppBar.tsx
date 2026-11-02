@@ -30,19 +30,28 @@ export default function CustomAppBar({ appBarTextColor, appBarColor, logoWidth, 
   const [loggedIn, setLoggedIn] = useState<boolean>(false);
 
   useEffect(() => {
+    let isMounted = true;
+
      async function checkAuthStatus() {
       console.log('Checking auth status...');
       if (pages.find((page) => page === '[auth]')) {
-        setLoggedIn( await getIfUserLoggedIn());
-        console.log('Logged in:', loggedIn);
-        setPages(pages.map((p) => p === '[auth]' ? (loggedIn ? 'Logout' : 'Login') : p));
+        const isLoggedIn = await getIfUserLoggedIn();
+        if (!isMounted) return;
+
+        setLoggedIn(isLoggedIn);
+        console.log('Logged in:', isLoggedIn);
+        setPages(pages.map((p) => p === '[auth]' ? (isLoggedIn ? 'Logout' : 'Login') : p));
       }
       else{
         console.log('No auth route found in pages:', pages);
       }
     }
     checkAuthStatus();
-  });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
 
 

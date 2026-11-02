@@ -32,7 +32,7 @@ export default function NotificationSystem({
     openState,
     setOpenState,
     onCloseCallback,
-    timeoutSeconds = 10,
+    timeoutSeconds = 5,
 }: Props) {
     useEffect(() => {
         if (!openState || timeoutSeconds <= 0) return;
@@ -70,7 +70,10 @@ export default function NotificationSystem({
         >
             <div className={`notification-content notification-content--${notificationType}`} role="status">
                 <NotificationIcon className="notification-icon" titleAccess={`${notificationType} notification`} />
-                <Typography className="notification-text">{notificationText}</Typography>
+                <Typography className="notification-text" sx={{
+                    maxWidth: '400px',
+                    wordWrap: 'break-word',
+                }}>{notificationText}</Typography>
                 <IconButton
                     className="notification-close"
                     aria-label="Close notification"

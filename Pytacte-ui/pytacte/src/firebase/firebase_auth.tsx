@@ -1,11 +1,17 @@
 import { app } from './firebase_app'
-import { getAuth, createUserWithEmailAndPassword, sendEmailVerification, applyActionCode, signInWithEmailAndPassword, validatePassword, signOut, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { getAuth, browserLocalPersistence, createUserWithEmailAndPassword, sendEmailVerification, applyActionCode, signInWithEmailAndPassword, validatePassword, signOut, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 
 
 type compositeResult = [boolean, string]
 
 const auth = getAuth(app);
+const persistenceReady = auth.setPersistence(browserLocalPersistence);
+
 const provider = new GoogleAuthProvider();
+
+function isValidEmail(email: string): boolean {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
 
 
 async function validateAccountPassword(password: string): Promise<compositeResult> {
@@ -28,9 +34,15 @@ async function validateAccountPassword(password: string): Promise<compositeResul
     return [status.isValid && !needsNumeric && !needsSymbol && !needsMinLength && !needsMaxLength && !needsUppercase && !needsLowercase, message];
 }
 
+
+
 export async function registerAccount(email: string, password: string): Promise<compositeResult> {
 
     try {
+        await persistenceReady;
+        if (!isValidEmail(email)) {
+            return [false, 'The email address is not valid.'];
+        }
 
         const [status, message] = await validateAccountPassword(password);
 
@@ -38,7 +50,6 @@ export async function registerAccount(email: string, password: string): Promise<
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             const user = userCredential.user;
             await sendEmailVerification(user);
-            // await applyActionCode(auth, code);
         }
         
         console.log('Account creation status:', status, 'Message:', message);
@@ -65,10 +76,18 @@ export async function registerAccount(email: string, password: string): Promise<
 
 export async function loginAccount(email: string, password: string): Promise<compositeResult> {
     try {
+        await persistenceReady;
         const userCredential = await signInWithEmailAndPassword(auth, email, password)
         const user = userCredential.user;
+        console.log(user.emailVerified);
 
-        return [true, 'Login Successful'];
+        if(user.emailVerified){
+            return [true, 'Login Successful'];
+        }
+        else {
+            await sendEmailVerification(user);
+            return [false, 'Email not verified. A new verification email was sent.'];
+        }
     }
     catch (error) {
         return [false, error as string];
@@ -78,6 +97,7 @@ export async function loginAccount(email: string, password: string): Promise<com
 
 export async function loginWithGoogle(): Promise<compositeResult> {
     try {
+        await persistenceReady;
         const userCredential = await signInWithPopup(auth, provider);
 
         // # If Google services need to be accessed, the following code can be used to retrieve the access token and user information. For now, it is commented out as it is not needed for basic authentication.
@@ -100,6 +120,7 @@ export async function loginWithGoogle(): Promise<compositeResult> {
 
 export async function logoutAccount(): Promise<compositeResult> {
     try {
+        await persistenceReady;
         await signOut(auth);
         return [true, 'Logout Successful'];
     }
@@ -109,9 +130,8 @@ export async function logoutAccount(): Promise<compositeResult> {
 }
 
 
-export function getIfUserLoggedIn(): boolean {
-    if (auth.currentUser)
-        return true;
-    else
-        return false;
+export async function getIfUserLoggedIn(): Promise<boolean> {
+    await persistenceReady;
+    await auth.authStateReady();
+    return auth.currentUser !== null;
 }

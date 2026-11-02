@@ -1,12 +1,24 @@
+import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import  { getIfUserLoggedIn } from '../firebase/firebase_auth'
+import { getIfUserLoggedIn } from '../firebase/firebase_auth'
 
 
 export const Route = createFileRoute('/')({ component: Home })
 
 function Home() {
-  if(!getIfUserLoggedIn())
-    window.location.href = '/auth';
+  const [authReady, setAuthReady] = useState(false)
+
+  useEffect(() => {
+    getIfUserLoggedIn().then((isUserLoggedIn) => {
+      if (isUserLoggedIn) {
+        setAuthReady(true)
+      } else {
+        window.location.href = '/auth'
+      }
+    })
+  }, [])
+
+  if (!authReady) return null
 
   return (
     <div className="p-8">

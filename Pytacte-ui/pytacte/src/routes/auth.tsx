@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
@@ -12,11 +12,11 @@ import RootPanel from '#/components/RootPanel';
 import LogoComponent from '#/components/LogoComponent';
 import NotificationSystem from '#/components/NotificationSystem';
 import googleLogo from '../images/google.png';
-import { loginAccount, loginWithGoogle, registerAccount } from '../firebase/firebase_auth';
+import { getIfUserLoggedIn, loginAccount, loginWithGoogle, registerAccount } from '../firebase/firebase_auth';
 
 export const Route = createFileRoute('/auth')({ component: Login });
 
-async function handleAuthentication(isGoogleLogIn: boolean, email: string, password: string, repeatPassword: string, isRegistering: boolean, setNotificationText: (text: string) => void, setNotificationType: (type: 'success' | 'error' | 'warning' | 'info') => void, setNotificationOpen: (open: boolean) => void) {
+async function handleAuthentication(isGoogleLogIn: boolean, email: string, password: string, repeatPassword: string, isRegistering: boolean, setNotificationText: (text: string) => void, setNotificationType: (type: 'success' | 'error' | 'warning' | 'info') => void, setNotificationOpen: (open: boolean) => void, setIsRegistering?: (isRegistering: boolean) => void) {
     if (isRegistering) {
         console.log('Registering with email:', email, 'and password:', password);
 
@@ -31,8 +31,10 @@ async function handleAuthentication(isGoogleLogIn: boolean, email: string, passw
         const [status, message] = await registerAccount(email, password)
 
         if (status) {
-            setNotificationText(message);
+            const registrationMessage = `${message}. Check your email to verify your account. Check your spam folder if needed.`;
+            setNotificationText(registrationMessage);
             setNotificationType('success');
+            setIsRegistering?.(false);
         } else {
             setNotificationText(message);
             setNotificationType('error');
@@ -67,9 +69,10 @@ async function handleAuthentication(isGoogleLogIn: boolean, email: string, passw
     }
 }
 
-function notificationCloseCallback() {
-    console.log('Notification closed');
-    // Implement any additional logic needed when the notification is closed
+async function notificationCloseCallback() {
+    if (await getIfUserLoggedIn()) {
+        window.location.href = '/';
+    }
 }
 
 
@@ -84,6 +87,8 @@ function Login() {
     const [notificationText, setNotificationText] = useState('');
     const [notificationType, setNotificationType] = useState<'success' | 'error' | 'warning' | 'info'>('info');
     const [notificationOpen, setNotificationOpen] = useState(false);
+
+    
 
     return (
         <RootPanel background_color="#d9d9da">
@@ -177,7 +182,7 @@ function Login() {
                                 onChange={(e) => setRepeatPassword(e.target.value)}
                             />
                         )}
-                        <Button className="auth-submit" type="button" variant="contained" fullWidth onClick={() => handleAuthentication(false, email, password, repeatPassword, isRegistering, setNotificationText, setNotificationType, setNotificationOpen)}>
+                        <Button className="auth-submit" type="button" variant="contained" fullWidth onClick={() => handleAuthentication(false, email, password, repeatPassword, isRegistering, setNotificationText, setNotificationType, setNotificationOpen, setIsRegistering)}>
                             {isRegistering ? 'Register' : 'Sign in'}
                         </Button>
                         {!isRegistering && (
