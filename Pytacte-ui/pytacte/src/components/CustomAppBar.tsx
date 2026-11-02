@@ -13,34 +13,37 @@ import MenuItem from '@mui/material/MenuItem';
 import LogoComponent from './LogoComponent';
 import { getIfUserLoggedIn } from '../firebase/firebase_auth';
 
+type RouteInfo = [path: string, label: string];
 
 type Porps = {
   authButtonTextColor?: string | 'inherit';
   appBarTextColor?: string;
+  appBarSecondaryTextColor?: string;
   appBarColor?: string;
   logoWidth?: number | string;
   logoHeight?: number | string;
-  routes?: string[];
+  routesInfo?: RouteInfo[];
 };
 
-export default function CustomAppBar({ appBarTextColor, appBarColor, logoWidth, logoHeight, routes }: Porps) {
+export default function CustomAppBar({ appBarTextColor, appBarSecondaryTextColor, appBarColor, logoWidth, logoHeight, routesInfo }: Porps) {
 
-  const [pages, setPages] = useState<string[]>(routes || ['Home', 'About', 'Contact']);
+  const [pages, setPages] = useState<RouteInfo[]>(routesInfo ?? [['/', 'Home']  ]);
 
   const [loggedIn, setLoggedIn] = useState<boolean>(false);
+
 
   useEffect(() => {
     let isMounted = true;
 
      async function checkAuthStatus() {
       console.log('Checking auth status...');
-      if (pages.find((page) => page === '[auth]')) {
+      if (pages.find(([, label]) => label === '[auth]')) {
         const isLoggedIn = await getIfUserLoggedIn();
         if (!isMounted) return;
 
         setLoggedIn(isLoggedIn);
-        console.log('Logged in:', isLoggedIn);
-        setPages(pages.map((p) => p === '[auth]' ? (isLoggedIn ? 'Logout' : 'Login') : p));
+
+        setPages(pages.map(([path, label]) => [path, label === '[auth]' ? (isLoggedIn ? 'Logout' : 'Login') : label]));
       }
       else{
         console.log('No auth route found in pages:', pages);
@@ -68,6 +71,19 @@ export default function CustomAppBar({ appBarTextColor, appBarColor, logoWidth, 
 
   const handleCloseUserMenu = () => {
     setAnchorElUser(null);
+  };
+
+  const handleButtonClick = ([path, label]: RouteInfo) => {
+    // Handle button click logic here
+    switch (label) {
+      case 'Login':
+      case 'Logout':
+        window.location.href = path;
+        break;
+      default:
+        window.location.href = path;
+        break;
+    }
   };
 
   return (
@@ -131,8 +147,8 @@ export default function CustomAppBar({ appBarTextColor, appBarColor, logoWidth, 
             >
               {pages.map((page) => (
 
-                <MenuItem key={page} onClick={handleCloseNavMenu} sx={{ color: appBarTextColor }}>
-                  <Typography sx={{ textAlign: 'center', color: appBarTextColor, fontFamily: 'Roboto Mono, monospace', fontWeight: 400, letterSpacing: '.05rem', fontSize: '0.800rem' }}>{page}</Typography>
+                <MenuItem key={page[0]} onClick={() => handleButtonClick(page)} sx={{ color: appBarTextColor }}>
+                  <Typography sx={{ textAlign: 'center', color: page[0] === window.location.pathname ? appBarSecondaryTextColor : appBarTextColor, fontFamily: 'Roboto Mono, monospace', fontWeight: 400, letterSpacing: '.05rem', fontSize: '0.800rem' }}>{page[1]}</Typography>
                 </MenuItem>
               ))}
             </Menu>}
@@ -159,11 +175,11 @@ export default function CustomAppBar({ appBarTextColor, appBarColor, logoWidth, 
           {loggedIn && <Box sx={{ flexGrow: 1, display: { xs: 'none', md: 'flex', marginLeft: '50px' } }}>
             {pages.map((page) => (
               <Button
-                key={page}
-                onClick={handleCloseNavMenu}
-                sx={{ my: 2, color: appBarTextColor, display: 'block', fontFamily: 'Roboto Mono, monospace', fontWeight: 500, letterSpacing: '.1rem', fontSize: '1rem', textTransform: 'none', marginRight: '20px', }}
+                key={page[0]}
+                onClick={() => handleButtonClick(page)}
+                sx={{ my: 2, color: page[0] === window.location.pathname ? appBarSecondaryTextColor : appBarTextColor, display: 'block', fontFamily: 'Roboto Mono, monospace', fontWeight: 500, letterSpacing: '.1rem', fontSize: '1rem', textTransform: 'none', marginRight: '20px', }}
               >
-                {page}
+                {page[1]}
               </Button>
             ))}
           </Box>}

@@ -79,7 +79,6 @@ export async function loginAccount(email: string, password: string): Promise<com
         await persistenceReady;
         const userCredential = await signInWithEmailAndPassword(auth, email, password)
         const user = userCredential.user;
-        console.log(user.emailVerified);
 
         if(user.emailVerified){
             return [true, 'Login Successful'];

@@ -18,8 +18,6 @@ export const Route = createFileRoute('/auth')({ component: Login });
 
 async function handleAuthentication(isGoogleLogIn: boolean, email: string, password: string, repeatPassword: string, isRegistering: boolean, setNotificationText: (text: string) => void, setNotificationType: (type: 'success' | 'error' | 'warning' | 'info') => void, setNotificationOpen: (open: boolean) => void, setIsRegistering?: (isRegistering: boolean) => void) {
     if (isRegistering) {
-        console.log('Registering with email:', email, 'and password:', password);
-
         const passwordsMatch = password === repeatPassword;
         if (!passwordsMatch) {
             setNotificationText('Passwords do not match.');
@@ -88,7 +86,7 @@ function Login() {
     const [notificationType, setNotificationType] = useState<'success' | 'error' | 'warning' | 'info'>('info');
     const [notificationOpen, setNotificationOpen] = useState(false);
 
-    
+
 
     return (
         <RootPanel background_color="#d9d9da">
@@ -107,7 +105,11 @@ function Login() {
                 appBarTextColor="#003b5f"
                 appBarColor="#f8f8f8"
                 authButtonTextColor="#003b5f"
-                routes={['Trancription', 'About', '[auth]']}
+                routesInfo={[
+                    ['/', 'Transcription'],
+                    ['/about', 'About'],
+                    ['/auth', '[auth]'],
+                ]}
             />
             <main className="auth-layout">
                 <section className="auth-card" aria-labelledby="login-title">
