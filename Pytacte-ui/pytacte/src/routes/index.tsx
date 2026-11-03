@@ -11,7 +11,8 @@ import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import MicOffIcon from '@mui/icons-material/MicOff'
 import MicIcon from '@mui/icons-material/Mic'
-import ExpandIcon from '@mui/icons-material/Expand'
+import CropSquare from '@mui/icons-material/CropSquare'
+import FilterNone  from '@mui/icons-material/FilterNone'
 import LiveWaveformRecorder from '#/components/LiveWaveformRecorder'
 import CodeMirror from '@uiw/react-codemirror'
 import { EditorView } from '@codemirror/view'
@@ -36,7 +37,11 @@ const transcriptionEditorTheme = EditorView.theme({
   '.cm-line': { padding: '0' },
   '.cm-gutters': { display: 'none' },
   '.cm-cursor': { borderLeftColor: '#f8f8f8' },
-  '.cm-selectionBackground, ::selection': { backgroundColor: 'rgba(248, 248, 248, 0.25)' },
+  '.cm-selectionBackground': { backgroundColor: 'dodgerblue' },
+  '.cm-content ::selection': { backgroundColor: 'dodgerblue !important', color: '#fff' },
+  '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
+    background: 'dodgerblue !important',
+  },
   '.cm-scroller::-webkit-scrollbar': { width: '8px', height: 0 },
   '.cm-scroller::-webkit-scrollbar:horizontal': { display: 'none' },
   '.cm-scroller::-webkit-scrollbar-track': { backgroundColor: '#003b5f', borderRadius: '8px' },
@@ -204,16 +209,19 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
             <div style={{ display: 'block', width: '100%', height: modelPanelHeight ? `${modelPanelHeight}px` : 'fit-content' }}>
               <CustomPaper background_color='#f8f8f8' boxShadow='1px 0px 10px #004faa' width='100%' height='100%' padding='6px'>
                 <div style={{ display: 'flex', borderRadius: '3px', textAlign: 'start', backgroundColor: '#f8f8f8', flexDirection: 'column', boxSizing: 'border-box', width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
-                  <div style={{ display: 'grid', backgroundColor: '#f8f8f8', gridTemplateColumns: '1.8fr 0.2fr', width: '100%', justifyContent: 'center', height: '50px' }}>
+                  <div style={{ display: 'grid', backgroundColor: '#f8f8f8', gridTemplateColumns: '1.8fr 0.2fr', width: '100%', justifyContent: 'center', height: '40px' }}>
                     <div style={{ width: '100%', height: '100%', borderRadius: '10px' }} />
-                    <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', width: '100%', height: '100%', borderRadius: '10px' }}>
+                    <div style={{ display:'flex', flexDirection:'column', justifyContent:'top', alignContent:'center', width: '100%', height: '100%', borderRadius: '10px' }}>
                       <IconButton aria-label="Expand off" color="primary" sx={{
                         height:'fit-content',
-                        color:'#4ba2f8'
+                        alignSelf: 'center',
+                        color:'#003b5f'
                       }} onClick={() => { setMuteAudio(!muteAudio) }} >
-                        <ExpandIcon />
+                        <CropSquare sx={{
+                          height:'20px',
+                          width:'20px'
+                        }}/>
                       </IconButton>
-                      <ExpandIcon />
                     </div>
                   </div>
                   <div style={{ display: 'flex', borderRadius: '3px', textAlign: 'start', backgroundColor: '#003b5f', flexDirection: 'column', boxSizing: 'border-box', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderColor:'#afafaf', borderWidth:'2px' }}>
@@ -221,6 +229,7 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
                       {initLabel}
                     </Typography>
                     <CodeMirror
+                      readOnly={true}
                       aria-label="Transcription"
                       value={transcription}
                       onChange={(value) => setTranscription(value)}
