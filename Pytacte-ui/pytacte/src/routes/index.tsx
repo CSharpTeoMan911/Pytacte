@@ -11,8 +11,8 @@ import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import MicOffIcon from '@mui/icons-material/MicOff'
 import MicIcon from '@mui/icons-material/Mic'
-import CropSquare from '@mui/icons-material/CropSquare'
-import FilterNone  from '@mui/icons-material/FilterNone'
+import OpenInFull from '@mui/icons-material/OpenInFull'
+import CloseFullscreen from '@mui/icons-material/CloseFullscreen'
 import LiveWaveformRecorder from '#/components/LiveWaveformRecorder'
 import CodeMirror from '@uiw/react-codemirror'
 import { EditorView } from '@codemirror/view'
@@ -58,16 +58,18 @@ function Home() {
   const targetInitMarker = '>>>';
   const targetInitLabel = ' init pyctate';
 
+  const [expandTranscriptionPanel, setExpandTranscriptionPanel] = useState(false);
+
   const [initLabel, setInitLabel] = useState<string>(targetInitMarker);
   const [hydrated, setHydrated] = useState<boolean>(false);
   let markerAnimationInterval: NodeJS.Timeout | undefined;
   let initLabelValue: string = targetInitMarker;
   let markerIndex: number = 0;
 
-  const [authReady, setAuthReady] = useState<boolean>(false)
+  const [authReady, setAuthReady] = useState<boolean>(false);
   const [muteAudio, setMuteAudio] = useState<boolean>(false);
-  const [modelPanelHeight, setModelPanelHeight] = useState<number>()
-  const modelPanelRef = useRef<HTMLDivElement>(null)
+  const [modelPanelHeight, setModelPanelHeight] = useState<number>();
+  const modelPanelRef = useRef<HTMLDivElement>(null);
 
   let text = `Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\nUt enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
 
@@ -147,7 +149,9 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
           ['/', 'Transcription'],
           ['/about', 'About'],
           ['/auth', '[auth]'],
-        ]} />
+        ]}
+        zIndex={expandTranscriptionPanel ? -1 : undefined} 
+        />
 
       <DeviceSelector desktopChildren={
         <div style={{ display: 'grid', placeItems: 'center', width: '100%', minHeight: 'calc(100vh - 64px)', padding: '10px' }}>
@@ -207,24 +211,31 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
             </div>
 
             <div style={{ display: 'block', width: '100%', height: modelPanelHeight ? `${modelPanelHeight}px` : 'fit-content' }}>
-              <CustomPaper background_color='#f8f8f8' boxShadow='1px 0px 10px #004faa' width='100%' height='100%' padding='6px'>
+              <CustomPaper position={expandTranscriptionPanel ? 'absolute' : 'relative'} top={expandTranscriptionPanel ? '0' : 'default'} left={expandTranscriptionPanel ? '0' : 'default'}  zIndex={expandTranscriptionPanel ? 100 : 0} background_color='#f8f8f8' boxShadow='1px 0px 10px #004faa' width={expandTranscriptionPanel ? '100vw' : '100%'} height={expandTranscriptionPanel ? '100vh' : '100%'} padding='6px'>
                 <div style={{ display: 'flex', borderRadius: '3px', textAlign: 'start', backgroundColor: '#f8f8f8', flexDirection: 'column', boxSizing: 'border-box', width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
                   <div style={{ display: 'grid', backgroundColor: '#f8f8f8', gridTemplateColumns: '1.8fr 0.2fr', width: '100%', justifyContent: 'center', height: '40px' }}>
                     <div style={{ width: '100%', height: '100%', borderRadius: '10px' }} />
-                    <div style={{ display:'flex', flexDirection:'column', justifyContent:'top', alignContent:'center', width: '100%', height: '100%', borderRadius: '10px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'top', alignContent: 'center', width: '100%', height: '100%', borderRadius: '10px' }}>
                       <IconButton aria-label="Expand off" color="primary" sx={{
-                        height:'fit-content',
+                        height: 'fit-content',
                         alignSelf: 'center',
-                        color:'#003b5f'
-                      }} onClick={() => { setMuteAudio(!muteAudio) }} >
-                        <CropSquare sx={{
-                          height:'20px',
-                          width:'20px'
-                        }}/>
+                        color: '#003b5f'
+                      }} onClick={() => { setExpandTranscriptionPanel(!expandTranscriptionPanel) }} >
+                        {
+                          expandTranscriptionPanel ?
+                            <CloseFullscreen sx={{
+                              height: '20px',
+                              width: '20px'
+                            }} /> :
+                            <OpenInFull sx={{
+                              height: '20px',
+                              width: '20px'
+                            }} />
+                        }
                       </IconButton>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', borderRadius: '3px', textAlign: 'start', backgroundColor: '#003b5f', flexDirection: 'column', boxSizing: 'border-box', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderColor:'#afafaf', borderWidth:'2px' }}>
+                  <div style={{ display: 'flex', borderRadius: '3px', textAlign: 'start', backgroundColor: '#003b5f', flexDirection: 'column', boxSizing: 'border-box', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderColor: '#afafaf', borderWidth: '2px' }}>
                     <Typography sx={{ margin: '10px', color: '#f8f8f8', fontFamily: '"Tiny5 Duo", sans-serif;', fontSize: '15px' }}>
                       {initLabel}
                     </Typography>

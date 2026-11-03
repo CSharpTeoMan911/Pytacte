@@ -23,11 +23,12 @@ type Porps = {
   logoWidth?: number | string;
   logoHeight?: number | string;
   routesInfo?: RouteInfo[];
+  zIndex?: number
 };
 
-export default function CustomAppBar({ appBarTextColor, appBarSecondaryTextColor, appBarColor, logoWidth, logoHeight, routesInfo }: Porps) {
+export default function CustomAppBar({ appBarTextColor, appBarSecondaryTextColor, appBarColor, logoWidth, logoHeight, routesInfo, zIndex }: Porps) {
 
-  const [pages, setPages] = useState<RouteInfo[]>(routesInfo ?? [['/', 'Home']  ]);
+  const [pages, setPages] = useState<RouteInfo[]>(routesInfo ?? [['/', 'Home']]);
 
   const [loggedIn, setLoggedIn] = useState<boolean>(false);
 
@@ -35,7 +36,7 @@ export default function CustomAppBar({ appBarTextColor, appBarSecondaryTextColor
   useEffect(() => {
     let isMounted = true;
 
-     async function checkAuthStatus() {
+    async function checkAuthStatus() {
       console.log('Checking auth status...');
       if (pages.find(([, label]) => label === '[auth]')) {
         const isLoggedIn = await getIfUserLoggedIn();
@@ -45,7 +46,7 @@ export default function CustomAppBar({ appBarTextColor, appBarSecondaryTextColor
 
         setPages(pages.map(([path, label]) => [path, label === '[auth]' ? (isLoggedIn ? 'Logout' : 'Login') : label]));
       }
-      else{
+      else {
         console.log('No auth route found in pages:', pages);
       }
     }
@@ -87,7 +88,7 @@ export default function CustomAppBar({ appBarTextColor, appBarSecondaryTextColor
   };
 
   return (
-    <AppBar position="static" sx={{ backgroundColor: appBarColor, color: appBarTextColor, zIndex: (theme) => theme.zIndex.appBar }}>
+    <AppBar position="static" sx={{ backgroundColor: appBarColor, color: appBarTextColor, zIndex: zIndex ? zIndex : (theme) => theme.zIndex.appBar}}>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap');
       </style>
