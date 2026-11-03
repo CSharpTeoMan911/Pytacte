@@ -13,9 +13,10 @@ import MicOffIcon from '@mui/icons-material/MicOff'
 import MicIcon from '@mui/icons-material/Mic'
 import OpenInFull from '@mui/icons-material/OpenInFull'
 import CloseFullscreen from '@mui/icons-material/CloseFullscreen'
-import LiveWaveformRecorder from '#/components/LiveWaveformRecorder'
+import LiveWaveformVisualiser from '#/components/LiveWaveformVisualiser'
 import CodeMirror from '@uiw/react-codemirror'
 import { EditorView } from '@codemirror/view'
+import { StartLiveAudioCapture, StopAudioCapture } from '../utils/LiveAudioCapture'
 
 const transcriptionEditorTheme = EditorView.theme({
   '&': {
@@ -54,9 +55,14 @@ const transcriptionEditorExtensions = [EditorView.lineWrapping, transcriptionEdi
 
 export const Route = createFileRoute('/')({ component: Home })
 
+
+function StreamAudioToServer(bytes: ArrayBuffer) {
+   // Stream the bytes to the backend
+}
+
 function Home() {
   const targetInitMarker = '>>>';
-  const targetInitLabel = ' init pyctate';
+  const targetInitLabel = ' init pytacte';
 
   const [expandTranscriptionPanel, setExpandTranscriptionPanel] = useState(false);
 
@@ -68,6 +74,7 @@ function Home() {
 
   const [authReady, setAuthReady] = useState<boolean>(false);
   const [muteAudio, setMuteAudio] = useState<boolean>(false);
+  const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [modelPanelHeight, setModelPanelHeight] = useState<number>();
   const modelPanelRef = useRef<HTMLDivElement>(null);
 
@@ -113,15 +120,53 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
       } else {
         window.location.href = '/auth'
       }
-    })
-  }, [])
+    });
+  }, []);
+
+
+
+
+  async function InitCapture() {
+    const [message, isSuccessful]: [string, boolean] = await StartLiveAudioCapture(StreamAudioToServer, setAudioStream);
+    if (isSuccessful) {
+      if (isSuccessful) {
+        setMuteAudio(true);
+      }
+    }
+  }
+
+  async function StopCapture() {
+    const [message, isSuccessful]: [string, boolean] = await StopAudioCapture();
+    if (isSuccessful) {
+      setAudioStream(null);
+      if (isSuccessful) {
+        setMuteAudio(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (muteAudio) {
+      console.log('[ Init media capture ]')
+      InitCapture();
+    }
+    else {
+      console.log('[ Stop media capture ]')
+      StopCapture();
+    }
+
+  }, [muteAudio]);
+
+
+
+
 
   useEffect(() => {
     const modelPanel = modelPanelRef.current
     if (!modelPanel) return
 
     const resizeObserver = new ResizeObserver(([entry]) => {
-      setModelPanelHeight(entry.contentRect.height)
+      setModelPanelHeight(entry.contentRect.height);
     })
     resizeObserver.observe(modelPanel)
 
@@ -150,14 +195,14 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
           ['/about', 'About'],
           ['/auth', '[auth]'],
         ]}
-        zIndex={expandTranscriptionPanel ? -1 : undefined} 
-        />
+        zIndex={expandTranscriptionPanel ? -1 : undefined}
+      />
 
       <DeviceSelector desktopChildren={
         <div style={{ display: 'grid', placeItems: 'center', width: '100%', minHeight: 'calc(100vh - 64px)', padding: '10px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(500px, 100%), 1fr))', gap: '10px', width: 'calc(100% - 20px)', height: 'fit-content' }}>
-            <div ref={modelPanelRef} style={{ display: 'block', width: '100%', height: 'fit-content' }}>
-              <CustomPaper background_color='#f8f8f8' width='100%' height='fit-content' boxShadow='1px 0px 10px #004faa'>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(500px, 100%), 1fr))', gap: '10px', width: 'calc(100% - 20px)', height: 'fit-content', minWidth: 0 }}>
+            <div ref={modelPanelRef} style={{ display: 'block', width: '100%', height: 'fit-content', minWidth: 0 }}>
+              <CustomPaper background_color='#f8f8f8' width='100%' minWidth='0' height='fit-content' boxShadow='1px 0px 10px #004faa'>
                 <div style={{ textAlign: 'start' }}>
                   <Typography sx={{ marginTop: '10px', marginLeft: '10px', color: '#003b5f', fontFamily: 'Roboto Mono, monospace', marginBottom: '40px', fontWeight: '800' }} variant='h5'>
                     // Ready to transcribe.
@@ -182,20 +227,32 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
                   <Typography sx={{ marginLeft: '10px', color: '#003b5f', fontFamily: 'Roboto Mono, monospace', marginBottom: '10px' }} variant='h6'>
                     // Select model precision
                   </Typography>
-                  <CustomSelectionField label='Model Precision' minWidth='40%' menuBackgroundColor='#272525' textColor='#003b5f' borderColor='#003b5f' menuContents={['Quantised 8', 'Full-Precision 16']} />
+                  <CustomSelectionField label='Model Precision' minWidth='40%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={['Quantised 8', 'Full-Precision 16']} />
                 </div>
                 <Divider sx={{
                   margin: '20px 0px 20px 0px',
                   borderColor: '#003b5f',
                 }} />
-                <div style={{ height: '50px', display: 'grid', gridTemplateColumns: '1.8fr 0.3fr', borderRadius: '12px', borderColor: '#003b5f', borderWidth: '0.5px', borderStyle: 'solid' }}>
-                  <div style={{ display: 'flex', flexDirection: 'row' }}>
-                    <div style={{ width: '100%', height: '100%', background: 'linear-gradient(to left top, #00558a, #003b5f)', borderRadius: '10px 0px 0px 10px', borderColor: '#003b5f', borderWidth: '0px' }}>
+                <div style={{ height: '50px', display: 'grid', gridTemplateColumns: 'minmax(0, 1.8fr) minmax(0, 0.3fr)', minWidth: 0, overflow: 'hidden', borderRadius: '12px', borderColor: '#003b5f', borderWidth: '0.5px', borderStyle: 'solid' }}>
+                  <div style={{ display: 'flex', flexDirection: 'row', minWidth: 0, overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', flex: '1 1 0', flexDirection: 'row', width: 0, height: '100%', minWidth: 0, overflow: 'hidden', background: 'linear-gradient(to left top, #00558a, #003b5f)', borderRadius: '10px 0px 0px 10px', borderColor: '#003b5f', borderWidth: '0px' }}>
+
+                      <div id='waveform' style={{
+                        alignSelf: 'center',
+                        flex: '1 1 0',
+                        minWidth: 0,
+                        maxWidth: '100%',
+                        height: '100%',
+                        margin: '5px 0',
+                        overflow: 'hidden',
+                      }}>
+                        {
+                          muteAudio ? <LiveWaveformVisualiser stream={audioStream} /> : <div />
+                        }
+                      </div>
 
                     </div>
-                    <div style={{ height: '100%', width: '1px', backgroundColor: '#003b5f' }}>
-
-                    </div>
+                    <div style={{ height: '100%', width: '1px', backgroundColor: '#003b5f' }} />
                   </div>
                   <div style={{ textAlign: 'center', display: 'flex', justifyContent: 'center', flexDirection: 'column', background: 'linear-gradient(to left top, #dadada, #aaa7a7)', borderRadius: '0px 10px 10px 0px' }}>
                     <IconButton aria-label="Microphone off" color="primary" onClick={() => { setMuteAudio(!muteAudio) }} sx={{
@@ -211,7 +268,7 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
             </div>
 
             <div style={{ display: 'block', width: '100%', height: modelPanelHeight ? `${modelPanelHeight}px` : 'fit-content' }}>
-              <CustomPaper position={expandTranscriptionPanel ? 'absolute' : 'relative'} top={expandTranscriptionPanel ? '0' : 'default'} left={expandTranscriptionPanel ? '0' : 'default'}  zIndex={expandTranscriptionPanel ? 100 : 0} background_color='#f8f8f8' boxShadow='1px 0px 10px #004faa' width={expandTranscriptionPanel ? '100vw' : '100%'} height={expandTranscriptionPanel ? '100vh' : '100%'} padding='6px'>
+              <CustomPaper position={expandTranscriptionPanel ? 'absolute' : 'relative'} top={expandTranscriptionPanel ? '0' : 'default'} left={expandTranscriptionPanel ? '0' : 'default'} zIndex={expandTranscriptionPanel ? 100 : 0} background_color='#f8f8f8' boxShadow='1px 0px 10px #004faa' width={expandTranscriptionPanel ? '100vw' : '100%'} height={expandTranscriptionPanel ? '100vh' : '100%'} padding='6px'>
                 <div style={{ display: 'flex', borderRadius: '3px', textAlign: 'start', backgroundColor: '#f8f8f8', flexDirection: 'column', boxSizing: 'border-box', width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
                   <div style={{ display: 'grid', backgroundColor: '#f8f8f8', gridTemplateColumns: '1.8fr 0.2fr', width: '100%', justifyContent: 'center', height: '40px' }}>
                     <div style={{ width: '100%', height: '100%', borderRadius: '10px' }} />

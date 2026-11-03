@@ -3,7 +3,7 @@ function getMessageEncoding(message:string) {
   return enc.encode(message);
 }
 
-async function encryptMessage(key:CryptoKey, message:string):Promise<ArrayBuffer> {
+export async function encryptMessage(key:CryptoKey, message:string):Promise<ArrayBuffer> {
   let encoded = getMessageEncoding(message);
   // counter will be needed for decryption
   const counter = window.crypto.getRandomValues(new Uint8Array(16));
@@ -18,7 +18,7 @@ async function encryptMessage(key:CryptoKey, message:string):Promise<ArrayBuffer
   );
 }
 
-async function generateKey():Promise<CryptoKey> {
+export async function generateKey():Promise<CryptoKey> {
   return await window.crypto.subtle.generateKey(
     {
       name: "AES-CTR",
