@@ -2,7 +2,7 @@ let mediaRecorder: MediaRecorder | undefined;
 let mediaStream: MediaStream | undefined;
 
 export async function StartLiveAudioCapture(
-    streamAudioCallback: (bytes: ArrayBuffer) => void,
+    streamAudioCallback: (bytes: Blob) => void,
     onStreamReady: (stream: MediaStream) => void,
 ): Promise<[string, boolean]> {
     try {
@@ -21,7 +21,7 @@ export async function StartLiveAudioCapture(
 
             mediaRecorder.ondataavailable = async(event) => {
                 if (event.data.size === 0) return;
-                const bytes:ArrayBuffer = await event.data.arrayBuffer();
+                const bytes:Blob = await event.data;
 
                 streamAudioCallback(bytes);
             };

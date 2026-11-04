@@ -56,8 +56,21 @@ const transcriptionEditorExtensions = [EditorView.lineWrapping, transcriptionEdi
 export const Route = createFileRoute('/')({ component: Home })
 
 
-function StreamAudioToServer(bytes: ArrayBuffer) {
-   // Stream the bytes to the backend
+function StreamAudioToServer(bytes: Blob) {
+  // Stream the bytes to the backend
+
+  // Create WebSocket connection.
+  const socket:WebSocket = new WebSocket("ws://localhost:80");
+
+  // Connection opened
+  socket.addEventListener("open", (event) => {
+    socket.send("Hello Server!");
+  });
+
+  // Listen for messages
+  socket.addEventListener("message", (event) => {
+    console.log("Message from server ", event.data);
+  });
 }
 
 function Home() {
@@ -176,7 +189,7 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
   if (!authReady) return null
 
   return (
-    <RootPanel style={{ backgroundColor: '#c9c9c9', display: 'flex', flexDirection: 'column' }}>
+    <RootPanel style={{ backgroundColor: '#2b4a6d', display: 'flex', flexDirection: 'column' }}>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=Micro+5&family=Tiny5+Duo:ital,wght@0,100..900;1,100..900&display=swap');
@@ -188,7 +201,7 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
         logoHeight="50px"
         appBarTextColor="#003b5f"
         appBarColor="#f8f8f8"
-        appBarSecondaryTextColor="#0961d3"
+        appBarSecondaryTextColor="#0989d3"
         authButtonTextColor="#003b5f"
         routesInfo={[
           ['/', 'Transcription'],
@@ -202,7 +215,7 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
         <div style={{ display: 'grid', placeItems: 'center', width: '100%', minHeight: 'calc(100vh - 64px)', padding: '10px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(500px, 100%), 1fr))', gap: '10px', width: 'calc(100% - 20px)', height: 'fit-content', minWidth: 0 }}>
             <div ref={modelPanelRef} style={{ display: 'block', width: '100%', height: 'fit-content', minWidth: 0 }}>
-              <CustomPaper background_color='#f8f8f8' width='100%' minWidth='0' height='fit-content' boxShadow='1px 0px 10px #004faa'>
+              <CustomPaper background_color='#f8f8f8' width='100%' minWidth='0' height='fit-content' boxShadow='1px 0px 10px #54b9f3'>
                 <div style={{ textAlign: 'start' }}>
                   <Typography sx={{ marginTop: '10px', marginLeft: '10px', color: '#003b5f', fontFamily: 'Roboto Mono, monospace', marginBottom: '40px', fontWeight: '800' }} variant='h5'>
                     // Ready to transcribe.
@@ -268,7 +281,7 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
             </div>
 
             <div style={{ display: 'block', width: '100%', height: modelPanelHeight ? `${modelPanelHeight}px` : 'fit-content' }}>
-              <CustomPaper position={expandTranscriptionPanel ? 'absolute' : 'relative'} top={expandTranscriptionPanel ? '0' : 'default'} left={expandTranscriptionPanel ? '0' : 'default'} zIndex={expandTranscriptionPanel ? 100 : 0} background_color='#f8f8f8' boxShadow='1px 0px 10px #004faa' width={expandTranscriptionPanel ? '100vw' : '100%'} height={expandTranscriptionPanel ? '100vh' : '100%'} padding='6px'>
+              <CustomPaper position={expandTranscriptionPanel ? 'absolute' : 'relative'} top={expandTranscriptionPanel ? '0' : 'default'} left={expandTranscriptionPanel ? '0' : 'default'} zIndex={expandTranscriptionPanel ? 100 : 0} background_color='#f8f8f8' boxShadow='1px 0px 10px #54b9f3' width={expandTranscriptionPanel ? '100vw' : '100%'} height={expandTranscriptionPanel ? '100vh' : '100%'} padding='6px'>
                 <div style={{ display: 'flex', borderRadius: '3px', textAlign: 'start', backgroundColor: '#f8f8f8', flexDirection: 'column', boxSizing: 'border-box', width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
                   <div style={{ display: 'grid', backgroundColor: '#f8f8f8', gridTemplateColumns: '1.8fr 0.2fr', width: '100%', justifyContent: 'center', height: '40px' }}>
                     <div style={{ width: '100%', height: '100%', borderRadius: '10px' }} />
@@ -296,6 +309,12 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
                     <Typography sx={{ margin: '10px', color: '#f8f8f8', fontFamily: '"Tiny5 Duo", sans-serif;', fontSize: '15px' }}>
                       {initLabel}
                     </Typography>
+
+                    <Divider sx={{
+                      margin: '0px 10px 0px 10px',
+                      borderColor: '#f8f8f8',
+                    }} />
+
                     <CodeMirror
                       readOnly={true}
                       aria-label="Transcription"

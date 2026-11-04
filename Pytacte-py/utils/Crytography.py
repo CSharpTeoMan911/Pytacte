@@ -62,6 +62,7 @@ class RSA_Crypto:
         path = Path(Path.cwd(), 'data', _file_name)
         with open(path, 'wb') as fw:
             fw.write(cert)
+            fw.flush()
         return path
             
     def read_rsa_key_from_file(
