@@ -9,7 +9,7 @@ from utils.Crytography import RSA_Crypto
 
 FILE_NAME = 'server_config.json'
 
-config = Config(use_encryption=True, use_gcloud=True)
+config = Config(use_encryption=True)
 
 loaded_config:object = {}
 private_key:rsa.RSAPrivateKey | None = None
@@ -33,7 +33,7 @@ def initiate_config() -> object:
         print(f'--> [Error: {e}]')
         raise
     
-def cert_management():
+async def cert_management():
     try:
         if loaded_config['use_encryption']:
             global public_key, private_key
@@ -43,13 +43,14 @@ def cert_management():
             private_cert_path = Path(Path.cwd(), 'data', loaded_config['private_key'])
             
             if public_cert_path.exists() and private_cert_path.exists():
-               public_key = crypto.read_private_rsa_key_from_file(private_cert_path)
-               private_key = crypto.read_public_rsa_key_from_file(public_cert_path)
+                private_key = await crypto.read_private_rsa_key_from_file(private_cert_path)
+                public_key = crypto.read_public_rsa_key_from_file(public_cert_path)
+                    
             elif loaded_config['generate_self_signed']:
                 private_key = crypto.generate_rsa_key()
                 public_key = private_key.public_key()
                 
-                public_key_bytes, private_key_bytes = crypto.serialise_rsa_key_pair(key=private_key)
+                public_key_bytes, private_key_bytes = await crypto.serialise_rsa_key_pair(key=private_key, passwordless=not loaded_config['encrypt_private_cert'])
                 
                 private_key_gen_path:str = crypto.write_rsa_key_to_file(private_cert_path, private_key_bytes)
                 public_key_gen_path:str = crypto.write_rsa_key_to_file(public_cert_path, public_key_bytes)
@@ -80,7 +81,7 @@ async def main():
     try:
         global loaded_config
         loaded_config = initiate_config()
-        cert_management()
+        await cert_management()
         
         print(loaded_config)
         

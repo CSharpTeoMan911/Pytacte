@@ -22,50 +22,34 @@ class GoogleSecretsManager:
         try:
             return secretmanager_v1.SecretManagerServiceAsyncClient()
 
-        except auth_exceptions.DefaultCredentialsError as exc:
-            raise RuntimeError("ADC credentials unavailable") from exc
-
-        except auth_exceptions.RefreshError as exc:
-            raise RuntimeError("Credential refresh failed") from exc
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(e)
 
     def __getProjectSource__(self):
         try:
             credentials, project_id = google.auth.default()
             return f"projects/{project_id}"
 
-        except auth_exceptions.DefaultCredentialsError as exc:
-            raise RuntimeError("ADC credentials unavailable") from exc
-
-        except auth_exceptions.RefreshError as exc:
-            raise RuntimeError("Credential refresh failed") from exc
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(e)
 
     async def __getSecret__(
         self,
         secret_name: str,
         secrets_manager: secretmanager_v1.SecretManagerServiceAsyncClient,
-    ) -> resources.Secret:
+    ) -> str:
         try:
-            resource_path = f"{self.__getProjectSource__()}/{'secrets'}/{secret_name}"
-            request = secretmanager_v1.GetSecretRequest(
+            resource_path = (
+                f"{self.__getProjectSource__()}/secrets/{secret_name}/versions/latest"
+            )
+            request = secretmanager_v1.AccessSecretVersionRequest(
                 name=resource_path,
             )
-            response = await secrets_manager.get_secret(request=request)
-            return response
+            response = await secrets_manager.access_secret_version(request=request)
+            return response.payload.data.decode("utf-8")
 
-        except auth_exceptions.DefaultCredentialsError as exc:
-            raise RuntimeError("ADC credentials unavailable") from exc
-
-        except auth_exceptions.RefreshError as exc:
-            raise RuntimeError("Credential refresh failed") from exc
-
-        except api_exceptions.Unauthorized as exc:
-            raise RuntimeError("Authentication failed") from exc
-
-        except api_exceptions.PermissionDenied as exc:
-            raise PermissionError("Insufficient IAM permissions") from exc
-
-        except api_exceptions.NotFound as exc:
-            raise LookupError("Secret not found") from exc
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(e)
 
     async def __setSecret__(
         self,
@@ -76,33 +60,23 @@ class GoogleSecretsManager:
             request = secretmanager_v1.CreateSecretRequest(
                 parent=self.__getProjectSource__(),
                 secret_id=secret_name,
+                secret=resources.Secret(
+                    replication=resources.Replication(
+                        automatic=resources.Replication.Automatic()
+                    )
+                ),
             )
 
             response = await secrets_manager.create_secret(request=request)
             return response
 
-        except auth_exceptions.DefaultCredentialsError as exc:
-            raise RuntimeError("ADC credentials unavailable") from exc
-
-        except auth_exceptions.RefreshError as exc:
-            raise RuntimeError("Credential refresh failed") from exc
-
-        except api_exceptions.Unauthorized as exc:
-            raise RuntimeError("Authentication failed") from exc
-
-        except api_exceptions.PermissionDenied as exc:
-            raise PermissionError("Insufficient IAM permissions") from exc
-
-        except api_exceptions.NotFound as exc:
-            raise LookupError("Project not found") from exc
-
-        except api_exceptions.AlreadyExists as exc:
-            raise RuntimeError("Secret already exists") from exc
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(e)
 
     async def __setSecretVersion__(
         self,
         secret_name: str,
-        secret:str,
+        secret: str,
         secrets_manager: secretmanager_v1.SecretManagerServiceAsyncClient,
     ):
         try:
@@ -111,22 +85,17 @@ class GoogleSecretsManager:
             # Initialize request argument(s)
             request = secretmanager_v1.AddSecretVersionRequest(
                 parent=resource_path,
-                payload=secretmanager_v1.SecretPayload(
-                    data=secret.encode('utf-8')
-                )
+                payload=secretmanager_v1.SecretPayload(data=secret.encode("utf-8")),
             )
 
             # Make the request
             response = await secrets_manager.add_secret_version(request=request)
             return response
 
-        except auth_exceptions.DefaultCredentialsError as exc:
-            raise RuntimeError("ADC credentials unavailable") from exc
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(e)
 
-        except auth_exceptions.RefreshError as exc:
-            raise RuntimeError("Credential refresh failed") from exc
-
-    async def getSecret(self, name:str) -> ReturnValue:
+    async def getSecret(self, name: str) -> ReturnValue:
         try:
             manager = self.__createSecretManager__()
             version = await self.__getSecret__(name, manager)
@@ -134,15 +103,15 @@ class GoogleSecretsManager:
         except RuntimeError as e:
             return ReturnValue(str(e), False, None)
 
-    async def setSecret(self, name:str, secret:str) -> ReturnValue:
+    async def setSecret(self, name: str, secret: str) -> ReturnValue:
         try:
             manager = self.__createSecretManager__()
-            await self.__setSecret__(name, secret, manager)
+            await self.__setSecret__(name, manager)
             _secret = await self.__setSecretVersion__(name, secret, manager)
             return ReturnValue("Secret addition successful", True, _secret)
         except RuntimeError as e:
             if str(e) == "Secret already exists":
-                try:     
+                try:
                     manager = self.__createSecretManager__()
                     _secret = await self.__setSecretVersion__(name, secret, manager)
                     return ReturnValue("Secret addition successful", True, _secret)
@@ -150,10 +119,10 @@ class GoogleSecretsManager:
                     return ReturnValue(str(_e), False, None)
             else:
                 return ReturnValue(str(e), False, None)
-            
+
     def verifyGoogleCloudAuthentication(self) -> ReturnValue:
         try:
             self.__getProjectSource__()
-            return ReturnValue('Google cloud authentication successful', True, None)
+            return ReturnValue("Google cloud authentication successful", True, None)
         except RuntimeError as e:
             return ReturnValue(str(e), False, None)

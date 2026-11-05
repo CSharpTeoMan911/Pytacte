@@ -48,20 +48,30 @@ class RSA_Crypto:
 
 
 
-    def serialise_rsa_key_pair(self, password_length:int = 10, passwordless:bool = True, key: rsa.RSAPrivateKey = None) -> tuple[bytes, bytes]:
-        auth_result = GoogleSecretsManager().verifyGoogleCloudAuthentication() if not passwordless else ReturnValue('No auth needed', True, None)
+    async def serialise_rsa_key_pair(self, password_length:int = 10, passwordless:bool = True, key: rsa.RSAPrivateKey = None) -> tuple[bytes, bytes]:
+        secretsManager = GoogleSecretsManager()
+        auth_result = secretsManager.verifyGoogleCloudAuthentication() if not passwordless else ReturnValue('No auth needed', True, None)
         
         if auth_result.successful:
-            password_bytes = str.encode(self.__cryptographycally_secure_random_password_generator__(password_length), encoding='utf-8')
-            public_pem = key.public_key().public_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo,
-            )
-            private_pem = key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8,
-                encryption_algorithm= serialization.NoEncryption() if passwordless else serialization.BestAvailableEncryption(password_bytes),
-            )
+            password = self.__cryptographycally_secure_random_password_generator__(password_length)
+                        
+            secret_insertion_result:ReturnValue = await secretsManager.setSecret(name='private_key_password', secret=password) if not passwordless else ReturnValue('No secret gen needed', True, None)
+            
+            if secret_insertion_result.successful:
+                password_bytes = str.encode(password, encoding='utf-8')
+                public_pem = key.public_key().public_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PublicFormat.SubjectPublicKeyInfo,
+                )
+                private_pem = key.private_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PrivateFormat.PKCS8,
+                    encryption_algorithm= serialization.NoEncryption() if passwordless else serialization.BestAvailableEncryption(password_bytes),
+                )
+            else:
+                raise RuntimeError(secret_insertion_result.message)
+            
+            print(secret_insertion_result.message)
             return public_pem, private_pem
         else:
             raise RuntimeError(f'Internal Error: {auth_result.message}\nError: Password encryption not valid if Google Cloud Secrets are not configured')
@@ -77,18 +87,27 @@ class RSA_Crypto:
             
             
             
-    def read_private_rsa_key_from_file(
+    async def read_private_rsa_key_from_file(
         self,
         path: str | Path,
-        password: str | bytes | None = None,
     ) -> rsa.RSAPrivateKey:
-        password_bytes = password.encode('utf-8') if isinstance(password, str) else password
-
-        with Path(path).open('rb') as fr:
-            private_key = serialization.load_pem_private_key(
-                fr.read(),
-                password=password_bytes,
-            )
+        
+        try:
+            with Path(path).open('rb') as fr:  # noqa: ASYNC230
+                private_key = serialization.load_pem_private_key(
+                    fr.read()
+                )
+        except TypeError:
+            secretsManager = GoogleSecretsManager()
+            result = await secretsManager.getSecret('private_key_password')
+            if result.successful:
+                with Path(path).open('rb') as fr:  # noqa: ASYNC230
+                    private_key = serialization.load_pem_private_key(
+                        fr.read(),
+                        password= str.encode(result.payload, 'utf-8'),
+                    )
+            else:
+                raise RuntimeError(result.message)
 
         if not isinstance(private_key, rsa.RSAPrivateKey):
             raise TypeError('The file does not contain an RSA private key')

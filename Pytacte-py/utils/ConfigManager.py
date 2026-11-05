@@ -15,7 +15,6 @@ class Config:
         self,
         ip_address: str = "127.0.0.1",
         port_number: int = 80,
-        use_gcloud: bool = False,
         use_encryption: bool = False,
         encrypt_private_cert: bool = False,
         generate_self_signed: bool = True,
@@ -27,7 +26,6 @@ class Config:
         self.config = {
             "ip_address": ip_address,
             "port_number": port_number,
-            "use_gcloud": use_gcloud,
             "use_encryption": use_encryption,
             "socket_backlog": socket_backlog,
             "encrypt_private_cert": encrypt_private_cert,
