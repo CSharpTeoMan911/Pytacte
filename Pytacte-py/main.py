@@ -3,7 +3,6 @@ import os
 import ssl
 from pathlib import Path
 
-from cryptography.hazmat.primitives.asymmetric import rsa
 from websockets.asyncio.server import serve
 
 from utils.ConfigManager import Config
