@@ -10,13 +10,14 @@ class ConfigResult:
         self.payload = payload
         
 class Config:
-    def __init__(self, ip_address:str = '127.0.0.1', port_number:int = 80, use_gcloud:bool = False, use_encryption:bool = False, socket_backlog:int=100):
+    def __init__(self, ip_address:str = '127.0.0.1', port_number:int = 80, use_gcloud:bool = False, use_encryption:bool = False, socket_backlog:int=100, max_transcription_jobs_per_user:int=10):
         self.config = {
             'ip_address':ip_address,
             'port_number':port_number,
             'use_gcloud':use_gcloud,
             'use_encryption':use_encryption,
-            'socket_backlog':socket_backlog
+            'socket_backlog':socket_backlog,
+            'max_transcription_jobs_per_user':max_transcription_jobs_per_user
         }
         
     def __delete_config_file__(self, file_name):
@@ -33,9 +34,9 @@ class Config:
             with open(path, 'wb') as fw:
                 fw.write(json.dumps(self.config, indent=4).encode('utf-8'))
                 fw.flush()
-                return ConfigResult(True, 'Configuration generation successful', None)
+                return ConfigResult(True, 'Configuration generation successful', self.config)
         except Exception as e:  # noqa: BLE001
-            return ConfigResult(False, str(e), None)
+            return ConfigResult(False, str(e), self.config)
     
     def read_config_file(self, file_name) -> ConfigResult:
         try:

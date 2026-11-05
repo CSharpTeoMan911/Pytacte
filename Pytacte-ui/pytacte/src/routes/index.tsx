@@ -17,6 +17,8 @@ import LiveWaveformVisualiser from '#/components/LiveWaveformVisualiser'
 import CodeMirror from '@uiw/react-codemirror'
 import { EditorView } from '@codemirror/view'
 import { StartLiveAudioCapture, StopAudioCapture } from '../utils/LiveAudioCapture'
+import { WebSocketInterface } from '../utils/WebSocketInterface'
+
 
 const transcriptionEditorTheme = EditorView.theme({
   '&': {
@@ -56,24 +58,8 @@ const transcriptionEditorExtensions = [EditorView.lineWrapping, transcriptionEdi
 export const Route = createFileRoute('/')({ component: Home })
 
 
-function StreamAudioToServer(bytes: Blob) {
-  // Stream the bytes to the backend
-
-  // Create WebSocket connection.
-  const socket:WebSocket = new WebSocket("ws://localhost:80");
-
-  // Connection opened
-  socket.addEventListener("open", (event) => {
-    socket.send("Hello Server!");
-  });
-
-  // Listen for messages
-  socket.addEventListener("message", (event) => {
-    console.log("Message from server ", event.data);
-  });
-}
-
 function Home() {
+  
   const targetInitMarker = '>>>';
   const targetInitLabel = ' init pytacte';
 
@@ -85,6 +71,7 @@ function Home() {
   let initLabelValue: string = targetInitMarker;
   let markerIndex: number = 0;
 
+  const [webSocketStreaming, setWebSocketStreaming] = useState<WebSocketInterface | undefined>(undefined);
   const [authReady, setAuthReady] = useState<boolean>(false);
   const [muteAudio, setMuteAudio] = useState<boolean>(false);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
@@ -105,6 +92,10 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
   const [transcription, setTranscription] = useState(text)
 
   console.log(`muteAudio: ${muteAudio}`)
+
+  function StreamAudioToServer(bytes: Blob) {
+
+  }
 
 
   function initAnimation() {
@@ -144,6 +135,7 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
     if (isSuccessful) {
       if (isSuccessful) {
         setMuteAudio(true);
+        setWebSocketStreaming(new WebSocketInterface('localhost', 80));
       }
     }
   }
@@ -154,6 +146,7 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
       setAudioStream(null);
       if (isSuccessful) {
         setMuteAudio(false);
+        setWebSocketStreaming(undefined);
       }
     }
   }
