@@ -1,4 +1,6 @@
 import asyncio
+import os
+import ssl
 from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -12,15 +14,13 @@ FILE_NAME = 'server_config.json'
 config = Config(use_encryption=True)
 
 loaded_config:object = {}
-private_key:rsa.RSAPrivateKey | None = None
-public_key:rsa.RSAPublicKey | None = None
 
 def initiate_config() -> object:
     try:
         result = config.read_config_file(FILE_NAME)
         
         if not result.successful:
-            print(f'--> [{result.message}]')
+            print(f'--> [ Error: {result.message}]')
             result = config.create_config_file(FILE_NAME)
             
             if result.successful:
@@ -30,37 +30,34 @@ def initiate_config() -> object:
             return result.payload
                 
     except Exception as e:
-        print(f'--> [Error: {e}]')
+        print(f'--> [ Error: {e}]')
         raise
     
 async def cert_management():
     try:
         if loaded_config['use_encryption']:
-            global public_key, private_key
             
             crypto = RSA_Crypto()
-            public_cert_path = Path(Path.cwd(), 'data', loaded_config['public_key'])
-            private_cert_path = Path(Path.cwd(), 'data', loaded_config['private_key'])
+            server_cert_path = Path(Path.cwd(), 'data', loaded_config['server_cert'])
+            private_key = Path(Path.cwd(), 'data', loaded_config['private_key'])
             
-            if public_cert_path.exists() and private_cert_path.exists():
-                private_key = await crypto.read_private_rsa_key_from_file(private_cert_path)
-                public_key = crypto.read_public_rsa_key_from_file(public_cert_path)
+            if server_cert_path.exists():
+                print('--> [ The server certificate exist. ]')
                     
             elif loaded_config['generate_self_signed']:
                 private_key = crypto.generate_rsa_key()
-                public_key = private_key.public_key()
                 
-                public_key_bytes, private_key_bytes = await crypto.serialise_rsa_key_pair(key=private_key, passwordless=not loaded_config['encrypt_private_cert'])
+                public_key_bytes, private_key_bytes = await crypto.serialise_rsa_key_pair(key=private_key, passwordless=not loaded_config['encrypt_cert'])
                 
-                private_key_gen_path:str = crypto.write_rsa_key_to_file(private_cert_path, private_key_bytes)
-                public_key_gen_path:str = crypto.write_rsa_key_to_file(public_cert_path, public_key_bytes)
+                cert_gen_path:str = await crypto.write_keys_to_cert(loaded_config['server_cert'], public_key_bytes, private_key_bytes, not loaded_config['encrypt_cert'])
+                private_key_gen_path:str = crypto.write_rsa_key_to_file(loaded_config['private_key'], private_key_bytes)
                 
-                print('\n\n--> [[!!!] Generating public and private keys [!!!]]')
-                print(f'--> [Public key path: {public_key_gen_path}]')
-                print(f'--> [Public key path: {private_key_gen_path}]')
+                print('\n\n--> [[!!!] Generating certificate and private key [!!!]]')
+                print(f'--> [Server certificate path: {cert_gen_path}]')
+                print(f'--> [Server private key path: {private_key_gen_path}]')
                 print('\n\n')
             else:
-                raise RuntimeError('--> [ Error: The public and/or private key is not available. ]')
+                raise RuntimeError('--> [ Error: The public key, private key, or certificate are not available. ]')
     except Exception as e:
         print(f'--> [ Error: {e}]')
         raise
@@ -79,21 +76,47 @@ async def echo(websocket):
 
 async def main():
     try:
+        print('--> [ Loading server configuration ]')
         global loaded_config
         loaded_config = initiate_config()
-        await cert_management()
         
-        print(loaded_config)
+        print('--> [ Loading server certificates ]')
+        await cert_management()
         
         IP = loaded_config['ip_address']
         PORT = loaded_config['port_number']
         
-        server = await serve(echo, IP, PORT)
-        await server.serve_forever()
+        if loaded_config['use_encryption']:
+            crypto = RSA_Crypto()
+            private_cert_path = Path(Path.cwd(), 'data', loaded_config['server_cert'])
+            private_key_path = Path(Path.cwd(), 'data', loaded_config['private_key'])
+            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            
+            try:
+                ssl_context.load_cert_chain(certfile=private_cert_path, keyfile=private_key_path)
+            except Exception as e:  # noqa: BLE001
+                print(f'--> [ Error: {e}]', '--> [ Extracting the private key password . . . ]')
+                ssl_context.load_cert_chain(certfile=private_cert_path, keyfile=private_key_path, password= await crypto.get_private_key_password())
+            
+            print('\n\n--> [ Server initiated ]')
+            print(f'--> [ Server listening on IP: {IP}, PORT: {PORT} ]')
+            
+            server = await serve(echo, IP, PORT, ssl=ssl_context)
+            await server.serve_forever()
+        else:
+            print('\n\n--> [ Server initiated ]')
+            print(f'--> [ Server listening on IP: {IP}, PORT: {PORT} ]')
+            
+            server = await serve(echo, IP, PORT)
+            await server.serve_forever()
+        
         
     except Exception as e:
         print(f'--> [Error: {e}]')
         raise
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        os.close(0)

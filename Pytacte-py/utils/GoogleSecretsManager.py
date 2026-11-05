@@ -110,7 +110,7 @@ class GoogleSecretsManager:
             _secret = await self.__setSecretVersion__(name, secret, manager)
             return ReturnValue("Secret addition successful", True, _secret)
         except RuntimeError as e:
-            if str(e) == "Secret already exists":
+            if "already exists" in str(e): 
                 try:
                     manager = self.__createSecretManager__()
                     _secret = await self.__setSecretVersion__(name, secret, manager)

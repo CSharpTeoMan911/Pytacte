@@ -16,10 +16,10 @@ class Config:
         ip_address: str = "127.0.0.1",
         port_number: int = 80,
         use_encryption: bool = False,
-        encrypt_private_cert: bool = False,
-        generate_self_signed: bool = True,
-        private_key: str = "server_cert.private.pem",
-        public_key: str = "server_cert.pem",
+        encrypt_cert: bool = False,
+        generate_self_signed: bool = False,
+        server_cert: str = "server_cert.pem",
+        private_key:str = 'private_key.pem',
         socket_backlog: int = 100,
         max_transcription_jobs_per_user: int = 10,
     ):
@@ -28,10 +28,10 @@ class Config:
             "port_number": port_number,
             "use_encryption": use_encryption,
             "socket_backlog": socket_backlog,
-            "encrypt_private_cert": encrypt_private_cert,
+            "encrypt_cert": encrypt_cert,
             "generate_self_signed": generate_self_signed,
+            "server_cert": server_cert,
             "private_key": private_key,
-            "public_key": public_key,
             "max_transcription_jobs_per_user": max_transcription_jobs_per_user,
         }
 

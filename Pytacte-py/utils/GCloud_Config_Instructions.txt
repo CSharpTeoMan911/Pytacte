@@ -1,0 +1,10 @@
+1) Create a Google Cloud project: https://console.cloud.google.com/projectcreate
+
+2) Download gcloud console: https://docs.cloud.google.com/sdk/docs/install-sdk
+
+3) In the python virtual-environment run the command: 'gcloud auth application-default login'
+
+4) [Optional] -> If you use your own signed certificate public/private keys and 
+                 you added them to the server's 'server_config.json' config file,
+                 set a new secret value in the Google Secrets manager named
+                 'private_key_password' and add you private key's password

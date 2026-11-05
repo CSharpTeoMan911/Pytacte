@@ -1,9 +1,13 @@
 import secrets
 import string
+from datetime import UTC, datetime, timedelta, timezone
+from ipaddress import IPv4Address
 from pathlib import Path
 
-from cryptography.hazmat.primitives import serialization
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 
 from utils.GoogleSecretsManager import GoogleSecretsManager, ReturnValue
 
@@ -77,58 +81,75 @@ class RSA_Crypto:
             raise RuntimeError(f'Internal Error: {auth_result.message}\nError: Password encryption not valid if Google Cloud Secrets are not configured')
         
         
-        
     def write_rsa_key_to_file(self, file_name:str, cert:bytes) -> str:
         path = Path(Path.cwd(), 'data', file_name)
         with open(path, 'wb') as fw:
             fw.write(cert)
             fw.flush()
         return path
-            
-            
-            
-    async def read_private_rsa_key_from_file(
+
+
+    async def write_keys_to_cert(
         self,
-        path: str | Path,
-    ) -> rsa.RSAPrivateKey:
+        file_name: str,
+        p_key: bytes,
+        pr_key: bytes,
+        passwrodless:bool = True
+    ) -> str:
+        public_key = serialization.load_pem_public_key(p_key)
         
-        try:
-            with Path(path).open('rb') as fr:  # noqa: ASYNC230
-                private_key = serialization.load_pem_private_key(
-                    fr.read()
-                )
-        except TypeError:
+        if not passwrodless:
             secretsManager = GoogleSecretsManager()
             result = await secretsManager.getSecret('private_key_password')
+        
             if result.successful:
-                with Path(path).open('rb') as fr:  # noqa: ASYNC230
-                    private_key = serialization.load_pem_private_key(
-                        fr.read(),
-                        password= str.encode(result.payload, 'utf-8'),
-                    )
+                password_bytes = str.encode(result.payload, 'utf-8')
+                private_key = serialization.load_pem_private_key(pr_key, password= password_bytes if not passwrodless else None)
             else:
                 raise RuntimeError(result.message)
-
-        if not isinstance(private_key, rsa.RSAPrivateKey):
-            raise TypeError('The file does not contain an RSA private key')
-
-        return private_key
-    
-    
-    
-    def read_public_rsa_key_from_file(
-        self,
-        path: str | Path,
-    ) -> rsa.RSAPublicKey:
-        
-        with Path(path).open('rb') as fr:
-            public_key = serialization.load_pem_public_key(
-                fr.read(),
-            )
+        else:
+            private_key = serialization.load_pem_private_key(pr_key, password=None)
 
         if not isinstance(public_key, rsa.RSAPublicKey):
-            raise TypeError('The file does not contain an RSA public key')
+            raise TypeError('The public key is not an RSA public key')
+        if not isinstance(private_key, rsa.RSAPrivateKey):
+            raise TypeError('The private key is not an RSA private key')
+        if public_key.public_numbers() != private_key.public_key().public_numbers():
+            raise ValueError('The public and private keys do not match')
 
-        return public_key
-            
+        subject = issuer = x509.Name([
+            x509.NameAttribute(NameOID.COMMON_NAME, 'pytacte'),
+        ])
+        now = datetime.now(UTC)
+        certificate = (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(issuer)
+            .public_key(public_key)
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now)
+            .not_valid_after(now + timedelta(days=365))
+            .add_extension(
+                x509.SubjectAlternativeName([
+                    x509.DNSName('localhost'),
+                    x509.IPAddress(IPv4Address('127.0.0.1')),
+                ]),
+                critical=False,
+            )
+            .sign(private_key, hashes.SHA256())
+        )
+
+        path = Path(Path.cwd(), 'data', file_name)
+        path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+        return str(path)
+    
+    
+    async def get_private_key_password(self) -> str:
+        secretsManager = GoogleSecretsManager()
+        result = await secretsManager.getSecret('private_key_password')
         
+        if result.successful:
+            return result.payload
+        else:
+            raise RuntimeError(result.message)
+
