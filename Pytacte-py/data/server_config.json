@@ -1,8 +1,0 @@
-{
-    "ip_address": "127.0.0.1",
-    "port_number": 80,
-    "use_gcloud": true,
-    "use_encryption": true,
-    "socket_backlog": 100,
-    "max_transcription_jobs_per_user": 10
-}

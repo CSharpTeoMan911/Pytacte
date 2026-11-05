@@ -146,6 +146,14 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
       setAudioStream(null);
       if (isSuccessful) {
         setMuteAudio(false);
+
+        // Shutdown the socket process
+        webSocketStreaming?.socketShutdown();
+
+        // Wait for the socket to shut down
+        while (webSocketStreaming?.isConnectionIntiated());
+
+        // Mark the websocket as undefined to mark it for garbage collection
         setWebSocketStreaming(undefined);
       }
     }

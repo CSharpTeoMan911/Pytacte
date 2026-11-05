@@ -4,3 +4,6 @@ Include
 Scripts
 pyvenv*
 __pycache__
+.pytest_cache
+*.pem
+server_config.json

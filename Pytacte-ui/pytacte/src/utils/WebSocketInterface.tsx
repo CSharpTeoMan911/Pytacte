@@ -1,17 +1,16 @@
-export class WebSocketInterface {
-    open_event:void | undefined = undefined
-    message_event:void | undefined = undefined
+//import {}
 
-    web_socket: WebSocket | undefined;
-    use_encryption: boolean = false;
-    connection_initiated: boolean = false;
-    ssl_handshake_completed: boolean = false;
+export class WebSocketInterface {
+    private web_socket: WebSocket | undefined;
+    private use_encryption: boolean = false;
+    private connection_initiated: boolean = false;
+    private ssl_handshake_completed: boolean = false;
 
     public constructor(ip_address: string = 'localhost', port: number = 80) {
         this.web_socket = new WebSocket(`ws://${ip_address}:${port}`);
 
         // Connection opened
-        this.open_event = this.web_socket?.addEventListener("open", (event) => {
+        this.web_socket?.addEventListener("open", (event) => {
             this.web_socket?.send("[ Client request: (use_encryption)]");
         });
 
@@ -33,5 +32,14 @@ export class WebSocketInterface {
 
     public __send_data__(data: Blob | string) {
         this.web_socket?.send(data);
+    }
+
+    public socketShutdown(){
+        this.web_socket?.close();
+        this.connection_initiated = false;
+    }
+
+    public isConnectionIntiated():boolean{
+        return this.connection_initiated;
     }
 }
