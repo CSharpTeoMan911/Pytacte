@@ -9,9 +9,25 @@ function postStatus(message) {
   self.postMessage([true, message]);
 }
 
-function connect(hostValue, portValue) {
+function connect(protocolValue, hostValue, portValue) {
+  let protocol;
   const host = String(hostValue).trim();
   const port = Number(portValue);
+
+  if (protocolValue == null || protocolValue === '') {
+    // Keep the current two-item init message working as a fallback.
+    protocol = 'ws';
+  } else {
+    const requestedProtocol = String(protocolValue).trim().toLowerCase();
+    if (requestedProtocol === 'ws') {
+      protocol = 'ws';
+    } else if (requestedProtocol === 'wss') {
+      protocol = 'wss';
+    } else {
+      postStatus(`[ WebSocket error: unsupported protocol "${protocolValue}"; expected "ws" or "wss" ]`);
+      return;
+    }
+  }
 
   if (!host) {
     postStatus('[ WebSocket error: host is empty ]');
@@ -23,10 +39,8 @@ function connect(hostValue, portValue) {
     return;
   }
 
-  const protocol = self.location.protocol === 'https:' ? 'wss:' : 'ws:';
-
   try {
-    const url = new URL(`${protocol}//${host}`);
+    const url = new URL(`${protocol}://${host}`);
     url.port = String(port);
 
     const connection = new WebSocket(url);
@@ -102,14 +116,10 @@ function sendMessage(message) {
 self.onmessage = (event) => {
   const { data } = event;
 
-  // The page initializes the worker with [host, port], then sends audio Blobs.
-  if (Array.isArray(data) && data.length >= 2) {
-    if (socket) {
-      postStatus('[ WebSocket is already initialized ]');
-      return;
-    }
-
-    connect(data[0], data[1]);
+  // Init format: [host, port, protocol]. The protocol accepts "ws"/"ws:" or "wss"/"wss:".
+  // Once initialized, all later client messages are forwarded to the socket.
+  if (!socket && Array.isArray(data) && data.length >= 2) {
+    connect(data[2], data[0], data[1]);
     return;
   }
 

@@ -148,7 +148,8 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
       console.error('Streaming worker error:', event.message);
     };
 
-    worker.postMessage(['127.0.0.1', '80']);
+    const protocol = 'wss';
+    worker.postMessage(['127.0.0.1', '80', protocol]);
     if (!webWorkerInit) setWebWorkerInit(true);
 
     return () => {
