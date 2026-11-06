@@ -62,16 +62,8 @@ async def cert_management():
         raise
 
 async def echo(websocket):
-    print(loaded_config)
-    initiated:bool = False
     async for message in websocket:
-        response = ''
-        if message == '[ Client request: (use_encryption)]' and not initiated:
-            response = f'[ Server response: (use_encryption == {loaded_config['use_encryption']})]'
-        else:
-            response = 'Mock message'
-            
-        await websocket.send(response)
+        print( message)
 
 async def main():
     try:
@@ -97,13 +89,13 @@ async def main():
                 print(f'--> [ Error: {e}]', '--> [ Extracting the private key password . . . ]')
                 ssl_context.load_cert_chain(certfile=private_cert_path, keyfile=private_key_path, password= await crypto.get_private_key_password())
             
-            print('\n\n--> [ Server initiated ]')
+            print('\n\n--> [ Server initiated - (encrypted) ]')
             print(f'--> [ Server listening on IP: {IP}, PORT: {PORT} ]')
             
             server = await serve(echo, IP, PORT, ssl=ssl_context)
             await server.serve_forever()
         else:
-            print('\n\n--> [ Server initiated ]')
+            print('\n\n--> [ Server initiated - (unencrypted) ]')
             print(f'--> [ Server listening on IP: {IP}, PORT: {PORT} ]')
             
             server = await serve(echo, IP, PORT)

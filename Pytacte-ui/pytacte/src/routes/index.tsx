@@ -17,7 +17,6 @@ import LiveWaveformVisualiser from '#/components/LiveWaveformVisualiser'
 import CodeMirror from '@uiw/react-codemirror'
 import { EditorView } from '@codemirror/view'
 import { StartLiveAudioCapture, StopAudioCapture } from '../utils/LiveAudioCapture'
-import { WebSocketInterface } from '../utils/WebSocketInterface'
 
 
 const transcriptionEditorTheme = EditorView.theme({
@@ -59,7 +58,7 @@ export const Route = createFileRoute('/')({ component: Home })
 
 
 function Home() {
-  
+
   const targetInitMarker = '>>>';
   const targetInitLabel = ' init pytacte';
 
@@ -71,7 +70,10 @@ function Home() {
   let initLabelValue: string = targetInitMarker;
   let markerIndex: number = 0;
 
-  const [webSocketStreaming, setWebSocketStreaming] = useState<WebSocketInterface | undefined>(undefined);
+  const [webSocketStreaming, setWebSocketStreaming] = useState<Worker | undefined>(undefined);
+  const webSocketWorkerRef = useRef<Worker | null>(null);
+  const [webWorkerInit, setWebWorkerInit] = useState<boolean>(false);
+
   const [authReady, setAuthReady] = useState<boolean>(false);
   const [muteAudio, setMuteAudio] = useState<boolean>(false);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
@@ -94,7 +96,7 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
   console.log(`muteAudio: ${muteAudio}`)
 
   function StreamAudioToServer(bytes: Blob) {
-
+    webSocketWorkerRef.current?.postMessage(bytes);
   }
 
 
@@ -127,6 +129,36 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
     });
   }, []);
 
+  useEffect(() => {
+    const worker = webSocketStreaming;
+    webSocketWorkerRef.current = worker ?? null;
+
+    if (!worker) return;
+
+    worker.onmessage = (event: MessageEvent) => {
+      const [isStatus, payload] = event.data;
+      if (isStatus) {
+        console.log(`Streaming worker response: ${payload}`);
+      } else {
+        console.log(`[ Message: ${payload} ]`);
+      }
+    };
+
+    worker.onerror = (event: ErrorEvent) => {
+      console.error('Streaming worker error:', event.message);
+    };
+
+    worker.postMessage(['127.0.0.1', '80']);
+    if (!webWorkerInit) setWebWorkerInit(true);
+
+    return () => {
+      if (webSocketWorkerRef.current === worker) {
+        webSocketWorkerRef.current = null;
+      }
+      worker.onmessage = null;
+      worker.onerror = null;
+    };
+  }, [webSocketStreaming])
 
 
 
@@ -135,7 +167,7 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
     if (isSuccessful) {
       if (isSuccessful) {
         setMuteAudio(true);
-        setWebSocketStreaming(new WebSocketInterface('localhost', 80));
+        setWebSocketStreaming(new Worker(new URL("../utils/WebSocketWorker.js", import.meta.url)));
       }
     }
   }
@@ -148,13 +180,13 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
         setMuteAudio(false);
 
         // Shutdown the socket process
-        webSocketStreaming?.socketShutdown();
-
-        // Wait for the socket to shut down
-        while (webSocketStreaming?.isConnectionIntiated());
+        webSocketStreaming?.terminate();
 
         // Mark the websocket as undefined to mark it for garbage collection
         setWebSocketStreaming(undefined);
+
+
+        setWebWorkerInit(false);
       }
     }
   }
