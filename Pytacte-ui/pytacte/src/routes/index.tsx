@@ -104,7 +104,6 @@ function Home() {
 
   function StreamAudioToServer(bytes: Blob) {
     if (jwtValidated.current && modelParamatersValidated.current) {
-      console.log(webSocketStreaming === undefined)
       webSocketStreamingRef.current?.postMessage(bytes);
     }
   }
@@ -180,7 +179,7 @@ function Home() {
                   jwtValidatationProcedureInitiated.current = true;
                 }
                 else {
-
+                  setTranscription(transcription + payload);
                 }
               });
             }
@@ -215,7 +214,7 @@ function Home() {
             }
             else
             {
-              // Processing the server responses for the transcription job
+
             }
           }
         }
