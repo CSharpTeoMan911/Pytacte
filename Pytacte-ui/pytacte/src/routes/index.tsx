@@ -17,6 +17,7 @@ import LiveWaveformVisualiser from '#/components/LiveWaveformVisualiser'
 import CodeMirror from '@uiw/react-codemirror'
 import { EditorView } from '@codemirror/view'
 import { StartLiveAudioCapture, StopAudioCapture } from '../utils/LiveAudioCapture'
+import { getJwtToken } from '../firebase/firebase_auth'
 
 
 const transcriptionEditorTheme = EditorView.theme({
@@ -71,8 +72,14 @@ function Home() {
   let markerIndex: number = 0;
 
   const [webSocketStreaming, setWebSocketStreaming] = useState<Worker | undefined>(undefined);
-  const webSocketWorkerRef = useRef<Worker | null>(null);
+  const shutdownRequestedRef = useRef(false);
   const [webWorkerInit, setWebWorkerInit] = useState<boolean>(false);
+
+  const [jwtValidatationProcedureInitiated, setJwtValidatationProcedureInitiated] = useState<boolean>(false);
+  const [jwtValidated, setJwtValidated] = useState<boolean>(false);
+
+  const [modelParamatersValidatationProcedureInitiated, setModelParamatersValidatationProcedureInitiated] = useState<boolean>(false);
+  const [modelParamatersValidated, setModelParamatersValidated] = useState<boolean>(false);
 
   const [authReady, setAuthReady] = useState<boolean>(false);
   const [muteAudio, setMuteAudio] = useState<boolean>(false);
@@ -80,28 +87,26 @@ function Home() {
   const [modelPanelHeight, setModelPanelHeight] = useState<number>();
   const modelPanelRef = useRef<HTMLDivElement>(null);
 
-  let text = `Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\nUt enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
-
-Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.\nExcepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
-
-Curabitur pretium tincidunt lacus. Nulla gravida orci a odio.\nNullam varius, turpis et commodo pharetra, est eros bibendum elit, nec luctus magna felis sollicitudin mauris.\nInteger in mauris eu nibh euismod gravida.
-
-Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet magna.\nVestibulum dapibus, mauris nec malesuada fames ac turpis velit, rhoncus eu, luctus et interdum adipiscing wisi.\nAliquam erat volutpat. Donec sit amet nisl.\nAliquam semper ipsum sit amet velit. Sed eu leo.\n`
-
-  text = `${text}\n${text}\n${text}\n${text}`
+  const [modelChanged, setModelChanged] = useState<string>('')
+  const [precisionChanged, setPrecisionChanged] = useState<string>('')
 
 
-  const [transcription, setTranscription] = useState(text)
 
-  console.log(`muteAudio: ${muteAudio}`)
+  const [transcription, setTranscription] = useState('')
+
+
 
   function StreamAudioToServer(bytes: Blob) {
-    webSocketWorkerRef.current?.postMessage(bytes);
+
+    if (jwtValidated && modelParamatersValidated) {
+      webSocketStreaming?.postMessage(bytes);
+    }
   }
 
 
+
   function initAnimation() {
-    console.log(initLabelValue);
+
     if (markerIndex < targetInitLabel.length) {
       initLabelValue += targetInitLabel[markerIndex];
       setInitLabel(initLabelValue);
@@ -129,65 +134,149 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
     });
   }, []);
 
+
+
+  /*
+  TODO: CRITICAL BUG
+  [WARNING] -> The current hook is using stale states that were cached during the initiation of the hook
+               when the 'webSocketStreaming' state changed. One possible fix is to install all the hooks
+               on the useState hook and manage them using logic. Another possible solution is to separate
+               the opration into multiple states that are inter-connected, but this will create 
+               more friction.
+  */
   useEffect(() => {
-    const worker = webSocketStreaming;
-    webSocketWorkerRef.current = worker ?? null;
+    console.log(webSocketStreaming)
+    if (webSocketStreaming) {
+      webSocketStreaming.onmessage = (event: MessageEvent) => {
+        const [isStatus, payload] = event.data;
+        console.log(payload)
+        if (isStatus) {
 
-    if (!worker) return;
 
-    worker.onmessage = (event: MessageEvent) => {
-      const [isStatus, payload] = event.data;
-      if (isStatus) {
-        console.log(`Streaming worker response: ${payload}`);
-      } else {
-        console.log(`[ Message: ${payload} ]`);
+          if (shutdownRequestedRef.current && String(payload).startsWith('[ Socket closed:')) {
+            shutdownRequestedRef.current = false;
+            webSocketStreaming.terminate();
+            setWebSocketStreaming(undefined);
+            return;
+          }
+
+          if (String(payload).includes('[ Socket connected to: ')) {
+            setWebWorkerInit(true);
+
+            if (!jwtValidatationProcedureInitiated) {
+              getJwtToken().then((result) => {
+                console.log('!!! Initiating JWT validation !!!')
+                const successful = result[0]
+                const payload = result[1]
+                if (successful) {
+                  webSocketStreaming?.postMessage(`<Authorisation_Token>${payload}</Authorisation_Token>`);
+                  setJwtValidatationProcedureInitiated(true);
+                }
+                else {
+
+                }
+              });
+            }
+          }
+        } else {
+
+          console.log('jwtValidated: ' + jwtValidated)
+          if (!jwtValidated) {
+            if (payload === '<JWT_Valid/>') {
+              setJwtValidated(true);
+
+              if (!modelParamatersValidatationProcedureInitiated) {
+                console.log('!!! Model validation parameters initaited !!!')
+                webSocketStreaming?.postMessage(`<STT_Model>${modelChanged}</STT_Model><STT_Model_Precision>${precisionChanged}</STT_Model_Precision>`);
+                setModelParamatersValidatationProcedureInitiated(true);
+              }
+            }
+            else if (payload === '<JWT_Invalid/>' || payload === '<Invalid_Message/>') {
+
+            }
+          }
+          else {
+           
+            if(!modelParamatersValidated)
+            {
+              console.log('!!! Validating model parameters !!!')
+              if(payload == '<Valid_Model_Parameters/>'){
+                console.log('!!! Model paramaters validated !!!')
+                setModelParamatersValidated(true);
+              }
+              else if (payload === '<Invalid_Model_Parameters/>') {
+
+              }
+            }
+          }
+        }
+      };
+
+      webSocketStreaming.onerror = (event: ErrorEvent) => {
+        console.error('Streaming worker error:', event.message);
+      };
+    }
+
+
+    if (!webWorkerInit && webSocketStreaming) {
+      shutdownRequestedRef.current = false;
+      const protocol = 'wss';
+      webSocketStreaming?.postMessage(['127.0.0.1', '80', protocol]);
+    }
+    else {
+      if (webWorkerInit) {
+        setJwtValidated(false);
+        setJwtValidatationProcedureInitiated(false);
+
+        setModelParamatersValidated(false)
+        setModelParamatersValidatationProcedureInitiated(false);
+
+        setWebWorkerInit(false);
+        setWebSocketStreaming(undefined);
+
+        
+
+        if (webSocketStreaming) {
+          webSocketStreaming.onmessage = null;
+          webSocketStreaming.onerror = null;
+        }
       }
-    };
-
-    worker.onerror = (event: ErrorEvent) => {
-      console.error('Streaming worker error:', event.message);
-    };
-
-    const protocol = 'wss';
-    worker.postMessage(['127.0.0.1', '80', protocol]);
-    if (!webWorkerInit) setWebWorkerInit(true);
-
-    return () => {
-      if (webSocketWorkerRef.current === worker) {
-        webSocketWorkerRef.current = null;
-      }
-      worker.onmessage = null;
-      worker.onerror = null;
-    };
+    }
   }, [webSocketStreaming])
 
 
+  function InitCapture() {
+    StartLiveAudioCapture(StreamAudioToServer, setAudioStream).then(([message, isSuccessful]: [string, boolean]) => {
+      console.log('InitCapture message:', message);
+      console.log('InitCapture status:', isSuccessful);
 
-  async function InitCapture() {
-    const [message, isSuccessful]: [string, boolean] = await StartLiveAudioCapture(StreamAudioToServer, setAudioStream);
-    if (isSuccessful) {
       if (isSuccessful) {
-        setMuteAudio(true);
-        setWebSocketStreaming(new Worker(new URL("../utils/WebSocketWorker.js", import.meta.url)));
+        if (isSuccessful) {
+          console.log('--> Init connection')
+          setMuteAudio(true);
+          setWebSocketStreaming(new Worker(new URL("../utils/WebSocketWorker.js", import.meta.url)));
+        }
       }
-    }
+
+    });
   }
 
   async function StopCapture() {
-    const [message, isSuccessful]: [string, boolean] = await StopAudioCapture();
+    const [message, isSuccessful]: [string, boolean] = StopAudioCapture();
+    console.log('StopCapture message:', message);
+    console.log('StopCapture status:', isSuccessful);
+
     if (isSuccessful) {
       setAudioStream(null);
       if (isSuccessful) {
         setMuteAudio(false);
 
-        // Shutdown the socket process
-        webSocketStreaming?.terminate();
-
-        // Mark the websocket as undefined to mark it for garbage collection
-        setWebSocketStreaming(undefined);
-
-
-        setWebWorkerInit(false);
+        // Ask the worker to close the socket. The socket's close status event
+        // will be detected above before the worker is terminated.
+        if (webSocketStreaming) {
+          shutdownRequestedRef.current = true;
+          webSocketStreaming.postMessage('<Shutdown/>');
+        }
       }
     }
   }
@@ -264,7 +353,7 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
                   <Typography sx={{ marginLeft: '10px', color: '#003b5f', fontFamily: 'Roboto Mono, monospace', marginBottom: '10px' }} variant='h6'>
                     // Select STT Model
                   </Typography>
-                  <CustomSelectionField label='Model' size='medium' minWidth='80%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={['Moonshine Streaming Medium', 'Granite Speech 5.0 TurboCTC', 'Parakeet TDT-CTC 110M']} />
+                  <CustomSelectionField label='Model' size='medium' minWidth='80%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={['Moonshine Streaming Medium', 'Granite Speech 5.0 TurboCTC', 'Parakeet TDT-CTC 110M']} onChange={setModelChanged} />
                 </div>
                 <Divider sx={{
                   margin: '20px 0px 20px 0px',
@@ -274,7 +363,7 @@ Phasellus fermentum in, dolor. Pellentesque facilisis. Nulla imperdiet sit amet 
                   <Typography sx={{ marginLeft: '10px', color: '#003b5f', fontFamily: 'Roboto Mono, monospace', marginBottom: '10px' }} variant='h6'>
                     // Select model precision
                   </Typography>
-                  <CustomSelectionField label='Model Precision' minWidth='40%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={['Quantised 8', 'Full-Precision 16']} />
+                  <CustomSelectionField label='Model Precision' minWidth='40%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={['Quantised 8', 'Full-Precision 16']} onChange={setPrecisionChanged} />
                 </div>
                 <Divider sx={{
                   margin: '20px 0px 20px 0px',

@@ -4,6 +4,7 @@ import { getAuth, browserLocalPersistence, createUserWithEmailAndPassword, sendE
 
 type compositeResult = [boolean, string]
 
+
 const auth = getAuth(app);
 const persistenceReady = auth.setPersistence(browserLocalPersistence);
 
@@ -133,4 +134,20 @@ export async function getIfUserLoggedIn(): Promise<boolean> {
     await persistenceReady;
     await auth.authStateReady();
     return auth.currentUser !== null;
+}
+
+
+export async function getJwtToken():Promise<compositeResult>  {
+    try
+    {
+        const token:string | undefined = await auth?.currentUser?.getIdToken(true);
+
+        if(token)
+            return [true, token];
+        else
+            throw 'Token cannot be retireved';
+    }
+    catch(error){
+        return [false, error as string];
+    }
 }

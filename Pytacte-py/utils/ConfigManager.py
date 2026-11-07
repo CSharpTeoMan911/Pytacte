@@ -13,26 +13,35 @@ class ConfigResult:
 class Config:
     def __init__(
         self,
-        ip_address: str = "127.0.0.1",
+        address: str = "127.0.0.1",
         port_number: int = 80,
         use_encryption: bool = False,
         encrypt_cert: bool = False,
         generate_self_signed: bool = False,
         server_cert: str = "server_cert.pem",
-        private_key:str = 'private_key.pem',
+        private_key: str = "private_key.pem",
         socket_backlog: int = 100,
         max_transcription_jobs_per_user: int = 10,
     ):
         self.config = {
-            "ip_address": ip_address,
-            "port_number": port_number,
-            "use_encryption": use_encryption,
-            "socket_backlog": socket_backlog,
-            "encrypt_cert": encrypt_cert,
-            "generate_self_signed": generate_self_signed,
-            "server_cert": server_cert,
-            "private_key": private_key,
-            "max_transcription_jobs_per_user": max_transcription_jobs_per_user,
+            "general": {
+                "address": address,
+                "port_number": port_number,
+                "socket_backlog": socket_backlog,
+            },
+            "security": {
+                "use_encryption": use_encryption,
+                "encrypt_cert": encrypt_cert,
+                "generate_self_signed": generate_self_signed,
+                "server_cert": server_cert,
+                "private_key": private_key,
+            },
+            "transcription": {
+                "max_transcription_jobs_per_user": max_transcription_jobs_per_user,
+            },
+            "firebase": {
+                "firebase_key_file_path":'USE_KEY_PATH'
+            },
         }
 
     def __delete_config_file__(self, file_name):

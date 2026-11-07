@@ -17,6 +17,7 @@ type Props = {
     menuBackgroundColor?: string | 'default'
     textColor?: string | 'default'
     borderColor?: string | 'default'
+    onChange?:(option:string) => void
 }
 
 const ITEM_HEIGHT = 48;
@@ -33,7 +34,7 @@ const MenuProps = {
     },
 };
 
-export default function CustomSelectionField({label, menuContents, menuBackgroundColor, textColor, borderColor, minWidth, size }: Props) {
+export default function CustomSelectionField({label, menuContents, menuBackgroundColor, textColor, borderColor, minWidth, size, onChange }: Props) {
 
     const MenuProps = {
         slotProps: {
@@ -44,16 +45,22 @@ export default function CustomSelectionField({label, menuContents, menuBackgroun
             },
         },
     };
-    const [sttModel, setSttModel] = React.useState(menuContents[0] ?? '');
+
+    const [option, setOption] = React.useState<string>(menuContents[0] ?? '');
 
     React.useEffect(() => {
-        if (menuContents.length > 0 && !menuContents.includes(sttModel)) {
-            setSttModel(menuContents[0]);
+        if (menuContents.length > 0 && !menuContents.includes(option)) {
+            setOption(menuContents[0]);
         }
-    }, [menuContents, sttModel]);
+    }, [menuContents, option]);
+
+    React.useEffect(()=>{
+        if(onChange)
+            onChange(option)
+    }, [option])
 
     const handleChange = (event: SelectChangeEvent) => {
-        setSttModel(event.target.value);
+        setOption(event.target.value);
     };
 
     return (
@@ -64,7 +71,7 @@ export default function CustomSelectionField({label, menuContents, menuBackgroun
             <Select
                 labelId="demo-simple-select-required-label"
                 id="demo-simple-select-required"
-                value={sttModel}
+                value={option}
                 label={label}
                 onChange={handleChange}
                 MenuProps={MenuProps}

@@ -5,12 +5,10 @@ import subprocess
 import threading
 import traceback
 from collections import deque
-from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-import pyaudio
 import transcribe_cpp
 
 # ------------------------------------------------------------
@@ -30,10 +28,8 @@ MODEL_PATH = Path(
 BACKEND = "auto"
 
 SAMPLE_RATE = 16000
-CHANNELS = 1
 
 FRAME_MS = 50
-FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000
 
 SPEECH_THRESHOLD = 0.02
 
@@ -91,70 +87,23 @@ asr_queue = queue.Queue()
 
 
 # ------------------------------------------------------------
-# Microphone
+# Audio Input
 # ------------------------------------------------------------
 
-def microphone_callback(in_data, frame_count, time_info, status_flags):
+def convert_audio_chunk(audio_chunk):
+    """Convert an audio chunk to a flat float32 array and queue it."""
     try:
-        if in_data:
-            samples = np.frombuffer(in_data, dtype=np.float32)
+        if isinstance(audio_chunk, (bytes, bytearray, memoryview)):
+            samples = np.frombuffer(audio_chunk, dtype=np.float32)
+        else:
+            samples = np.asarray(audio_chunk, dtype=np.float32)
 
-            if samples.size == frame_count * CHANNELS:
-                frame = samples.reshape(frame_count, CHANNELS)[:, 0].copy()
-                audio_queue.put_nowait(frame)
+        samples = np.ascontiguousarray(samples.reshape(-1), dtype=np.float32)
+        if samples.size:
+            audio_queue.put_nowait(samples)
 
     except Exception as e:
         error_logging(e)
-
-    return (None, pyaudio.paContinue)
-
-
-@contextmanager
-def pyaudio_input_stream(callback):
-    audio = None
-    stream = None
-
-    try:
-        audio = pyaudio.PyAudio()
-
-        stream = audio.open(
-            format=pyaudio.paFloat32,
-            channels=CHANNELS,
-            rate=SAMPLE_RATE,
-            input=True,
-            frames_per_buffer=FRAME_SAMPLES,
-            stream_callback=callback,
-        )
-
-        yield stream
-
-    except Exception as e:
-        error_logging(e)
-        raise
-
-    finally:
-        try:
-            if stream is not None:
-                try:
-                    if stream.is_active():
-                        stream.stop_stream()
-                except Exception as e:
-                    error_logging(e)
-
-                try:
-                    stream.close()
-                except Exception as e:
-                    error_logging(e)
-
-        except Exception as e:
-            error_logging(e)
-
-        finally:
-            try:
-                if audio is not None:
-                    audio.terminate()
-            except Exception as e:
-                error_logging(e)
 
 
 # ------------------------------------------------------------
@@ -249,19 +198,18 @@ def main():
                 print("[Result: [ loaded ]]", flush=True)
 
                 try:
-                    with pyaudio_input_stream(microphone_callback):
-                        while True:
-                            try:
-                                frame = audio_queue.get(block=True, timeout=1)
+                    while True:
+                        try:
+                            frame = audio_queue.get(block=True, timeout=1)
 
-                            except queue.Empty:
-                                continue
+                        except queue.Empty:
+                            continue
 
-                            except Exception as e:
-                                error_logging(e)
-                                continue
+                        except Exception as e:
+                            error_logging(e)
+                            continue
 
-                            try:    #################################################
+                        try:    #################################################
                                     #               [ RMS FORMULA ]
                                     #################################################
                                     #             __________________________
@@ -319,8 +267,8 @@ def main():
                                         speech_frame_count = 0
                                         pre_roll.clear()
 
-                            except Exception as e:
-                                error_logging(e)
+                        except Exception as e:
+                            error_logging(e)
 
                 except KeyboardInterrupt:
                     pass
@@ -349,23 +297,6 @@ def main():
                         worker.join()
                     except Exception as e:
                         error_logging(e)
-
-    except KeyboardInterrupt:
-        pass
-
-    except Exception as e:
-        error_logging(e)
-
-
-
-# ------------------------------------------------------------
-# Entry Point
-# ------------------------------------------------------------
-
-if __name__ == "__main__":
-    try:
-        shutdown_event = threading.Event()
-        main()
 
     except KeyboardInterrupt:
         pass

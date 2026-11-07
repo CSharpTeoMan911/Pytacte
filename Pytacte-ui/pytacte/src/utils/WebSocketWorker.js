@@ -116,6 +116,16 @@ function sendMessage(message) {
 self.onmessage = (event) => {
   const { data } = event;
 
+  if (data === '<Shutdown/>') {
+    queuedMessages = [];
+    if (socket && (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)) {
+      socket.close(1000, 'Client stopped');
+    } else {
+      postStatus('[ Socket closed: client stopped ]');
+    }
+    return;
+  }
+
   // Init format: [host, port, protocol]. The protocol accepts "ws"/"ws:" or "wss"/"wss:".
   // Once initialized, all later client messages are forwarded to the socket.
   if (!socket && Array.isArray(data) && data.length >= 2) {
