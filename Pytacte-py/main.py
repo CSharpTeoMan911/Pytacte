@@ -90,7 +90,7 @@ async def echo(websocket:ServerConnection):
     
     async for message in websocket:
         try:
-            print(f'--> Message: {message}\n\n')
+
             stt_model = ''
             model_precision = ''
             
@@ -130,7 +130,6 @@ async def echo(websocket:ServerConnection):
                         await websocket.close()
                         
             elif not stt_ai_model_paramaters_extracted and isinstance(message, str):
-                print(f'--> Model parameters: {message}\n\n____________________')
                 if model_label in message and model_label_end in message:
                     stt_model_begin = message.index(model_label) + len(model_label)
                     stt_model_end =  message.index(model_label_end)
@@ -144,10 +143,6 @@ async def echo(websocket:ServerConnection):
                     for i in range(model_precision_begin, model_precision_end):
                         model_precision += message[i]
                     
-                    
-                    print(f'STT Model: {stt_model}')
-                    print(f'Model precision: {model_precision}\n\n')
-                    
                     if stt_models.count(stt_model) > 0 and model_precisons.count(model_precision) > 0:
                         await websocket.send(message='<Valid_Model_Parameters/>', text=True)
                         stt_ai_model_paramaters_extracted = True
@@ -156,6 +151,7 @@ async def echo(websocket:ServerConnection):
                         await websocket.close()
         
             else:
+                print(type(message))
                 if isinstance(message, bytes):
                     print(message)
             

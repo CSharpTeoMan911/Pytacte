@@ -128,7 +128,7 @@ self.onmessage = (event) => {
 
   // Init format: [host, port, protocol]. The protocol accepts "ws"/"ws:" or "wss"/"wss:".
   // Once initialized, all later client messages are forwarded to the socket.
-  if (!socket && Array.isArray(data) && data.length >= 2) {
+  if (!socket && Array.isArray(data) && data.length === 3) {
     connect(data[2], data[0], data[1]);
     return;
   }

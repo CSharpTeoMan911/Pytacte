@@ -73,6 +73,8 @@ function Home() {
   let markerIndex: number = 0;
 
   const [webSocketStreaming, setWebSocketStreaming] = useState<Worker | undefined>(undefined);
+  const webSocketStreamingRef = useRef<Worker | undefined>(undefined);    
+
   const shutdownRequestedRef = useRef(false);
   const webWorkerInit = useRef<boolean>(false);
 
@@ -101,9 +103,9 @@ function Home() {
 
 
   function StreamAudioToServer(bytes: Blob) {
-
     if (jwtValidated.current && modelParamatersValidated.current) {
-      webSocketStreaming?.postMessage(bytes);
+      console.log(webSocketStreaming === undefined)
+      webSocketStreamingRef.current?.postMessage(bytes);
     }
   }
 
@@ -161,6 +163,7 @@ function Home() {
             shutdownRequestedRef.current = false;
             webSocketStreaming.terminate();
             setWebSocketStreaming(undefined);
+            webSocketStreamingRef.current = undefined;
             return;
           }
 
@@ -228,6 +231,7 @@ function Home() {
       shutdownRequestedRef.current = false;
       const protocol = 'wss';
       webSocketStreaming?.postMessage(['127.0.0.1', '80', protocol]);
+      webSocketStreamingRef.current = webSocketStreaming;
     }
     else {
       if (webWorkerInit.current) {
@@ -243,6 +247,7 @@ function Home() {
         if (webSocketStreaming) {
           webSocketStreaming.onmessage = null;
           webSocketStreaming.onerror = null;
+          webSocketStreamingRef.current = undefined;
         }
       }
     }
