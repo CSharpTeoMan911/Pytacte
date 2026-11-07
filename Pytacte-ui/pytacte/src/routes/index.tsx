@@ -18,6 +18,7 @@ import CodeMirror from '@uiw/react-codemirror'
 import { EditorView } from '@codemirror/view'
 import { StartLiveAudioCapture, StopAudioCapture } from '../utils/LiveAudioCapture'
 import { getJwtToken } from '../firebase/firebase_auth'
+import { darken } from '@mui/material/styles'
 
 
 const transcriptionEditorTheme = EditorView.theme({
@@ -73,13 +74,13 @@ function Home() {
 
   const [webSocketStreaming, setWebSocketStreaming] = useState<Worker | undefined>(undefined);
   const shutdownRequestedRef = useRef(false);
-  const [webWorkerInit, setWebWorkerInit] = useState<boolean>(false);
+  const webWorkerInit = useRef<boolean>(false);
 
-  const [jwtValidatationProcedureInitiated, setJwtValidatationProcedureInitiated] = useState<boolean>(false);
-  const [jwtValidated, setJwtValidated] = useState<boolean>(false);
+  const jwtValidatationProcedureInitiated = useRef<boolean>(false);
+  const jwtValidated = useRef<boolean>(false);
 
-  const [modelParamatersValidatationProcedureInitiated, setModelParamatersValidatationProcedureInitiated] = useState<boolean>(false);
-  const [modelParamatersValidated, setModelParamatersValidated] = useState<boolean>(false);
+  const modelParamatersValidatationProcedureInitiated = useRef<boolean>(false);
+  const modelParamatersValidated = useRef<boolean>(false);
 
   const [authReady, setAuthReady] = useState<boolean>(false);
   const [muteAudio, setMuteAudio] = useState<boolean>(false);
@@ -87,8 +88,11 @@ function Home() {
   const [modelPanelHeight, setModelPanelHeight] = useState<number>();
   const modelPanelRef = useRef<HTMLDivElement>(null);
 
-  const [modelChanged, setModelChanged] = useState<string>('')
-  const [precisionChanged, setPrecisionChanged] = useState<string>('')
+  const model = useRef<string>('');
+  const precision = useRef<string>('');
+  const [modelSelectionEnabled, setModelSelectionEnabled] = useState(true);
+  const [precisionSelectionEnabled, setPrecisionSelectionEnabled] = useState(true);
+
 
 
 
@@ -98,7 +102,7 @@ function Home() {
 
   function StreamAudioToServer(bytes: Blob) {
 
-    if (jwtValidated && modelParamatersValidated) {
+    if (jwtValidated.current && modelParamatersValidated.current) {
       webSocketStreaming?.postMessage(bytes);
     }
   }
@@ -161,16 +165,16 @@ function Home() {
           }
 
           if (String(payload).includes('[ Socket connected to: ')) {
-            setWebWorkerInit(true);
+            webWorkerInit.current = true;
 
-            if (!jwtValidatationProcedureInitiated) {
+            if (!jwtValidatationProcedureInitiated.current) {
               getJwtToken().then((result) => {
                 console.log('!!! Initiating JWT validation !!!')
                 const successful = result[0]
                 const payload = result[1]
                 if (successful) {
                   webSocketStreaming?.postMessage(`<Authorisation_Token>${payload}</Authorisation_Token>`);
-                  setJwtValidatationProcedureInitiated(true);
+                  jwtValidatationProcedureInitiated.current = true;
                 }
                 else {
 
@@ -180,33 +184,30 @@ function Home() {
           }
         } else {
 
-          console.log('jwtValidated: ' + jwtValidated)
-          if (!jwtValidated) {
+          console.log('jwtValidated: ' + jwtValidated.current)
+          if (!jwtValidated.current) {
             if (payload === '<JWT_Valid/>') {
-              setJwtValidated(true);
+              jwtValidated.current = true;
 
-              if (!modelParamatersValidatationProcedureInitiated) {
+              if (!modelParamatersValidatationProcedureInitiated.current) {
                 console.log('!!! Model validation parameters initaited !!!')
-                webSocketStreaming?.postMessage(`<STT_Model>${modelChanged}</STT_Model><STT_Model_Precision>${precisionChanged}</STT_Model_Precision>`);
-                setModelParamatersValidatationProcedureInitiated(true);
+                webSocketStreaming?.postMessage(`<STT_Model>${model.current}</STT_Model><STT_Model_Precision>${precision.current}</STT_Model_Precision>`);
+                modelParamatersValidatationProcedureInitiated.current = true;
               }
             }
             else if (payload === '<JWT_Invalid/>' || payload === '<Invalid_Message/>') {
 
             }
           }
-          else {
-           
-            if(!modelParamatersValidated)
-            {
-              console.log('!!! Validating model parameters !!!')
-              if(payload == '<Valid_Model_Parameters/>'){
-                console.log('!!! Model paramaters validated !!!')
-                setModelParamatersValidated(true);
-              }
-              else if (payload === '<Invalid_Model_Parameters/>') {
 
-              }
+          if (!modelParamatersValidated.current && jwtValidated.current) {
+            console.log('!!! Validating model parameters !!!')
+            if (payload === '<Valid_Model_Parameters/>') {
+              console.log('!!! Model paramaters validated !!!')
+              modelParamatersValidated.current = true;
+            }
+            else if (payload === '<Invalid_Model_Parameters/>') {
+
             }
           }
         }
@@ -218,23 +219,21 @@ function Home() {
     }
 
 
-    if (!webWorkerInit && webSocketStreaming) {
+    if (!webWorkerInit.current && webSocketStreaming) {
       shutdownRequestedRef.current = false;
       const protocol = 'wss';
       webSocketStreaming?.postMessage(['127.0.0.1', '80', protocol]);
     }
     else {
-      if (webWorkerInit) {
-        setJwtValidated(false);
-        setJwtValidatationProcedureInitiated(false);
-
-        setModelParamatersValidated(false)
-        setModelParamatersValidatationProcedureInitiated(false);
-
-        setWebWorkerInit(false);
+      if (webWorkerInit.current) {
+        jwtValidated.current = false;
+        jwtValidatationProcedureInitiated.current = false;
+        modelParamatersValidated.current = false;
+        modelParamatersValidatationProcedureInitiated.current = false;
+        webWorkerInit.current = false;
         setWebSocketStreaming(undefined);
 
-        
+
 
         if (webSocketStreaming) {
           webSocketStreaming.onmessage = null;
@@ -254,6 +253,8 @@ function Home() {
         if (isSuccessful) {
           console.log('--> Init connection')
           setMuteAudio(true);
+          setModelSelectionEnabled(false);
+          setPrecisionSelectionEnabled(false);
           setWebSocketStreaming(new Worker(new URL("../utils/WebSocketWorker.js", import.meta.url)));
         }
       }
@@ -270,6 +271,8 @@ function Home() {
       setAudioStream(null);
       if (isSuccessful) {
         setMuteAudio(false);
+        setModelSelectionEnabled(true);
+        setPrecisionSelectionEnabled(true);
 
         // Ask the worker to close the socket. The socket's close status event
         // will be detected above before the worker is terminated.
@@ -353,7 +356,7 @@ function Home() {
                   <Typography sx={{ marginLeft: '10px', color: '#003b5f', fontFamily: 'Roboto Mono, monospace', marginBottom: '10px' }} variant='h6'>
                     // Select STT Model
                   </Typography>
-                  <CustomSelectionField label='Model' size='medium' minWidth='80%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={['Moonshine Streaming Medium', 'Granite Speech 5.0 TurboCTC', 'Parakeet TDT-CTC 110M']} onChange={setModelChanged} />
+                  <CustomSelectionField label='Model' size='medium' minWidth='80%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={['Moonshine Streaming Medium', 'Granite Speech 5.0 TurboCTC', 'Parakeet TDT-CTC 110M']} enabled={modelSelectionEnabled} onChange={(value) => { model.current = value; }} />
                 </div>
                 <Divider sx={{
                   margin: '20px 0px 20px 0px',
@@ -363,7 +366,7 @@ function Home() {
                   <Typography sx={{ marginLeft: '10px', color: '#003b5f', fontFamily: 'Roboto Mono, monospace', marginBottom: '10px' }} variant='h6'>
                     // Select model precision
                   </Typography>
-                  <CustomSelectionField label='Model Precision' minWidth='40%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={['Quantised 8', 'Full-Precision 16']} onChange={setPrecisionChanged} />
+                  <CustomSelectionField label='Model Precision' minWidth='40%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={['Quantised 8', 'Full-Precision 16']} enabled={precisionSelectionEnabled} onChange={(value) => { precision.current = value; }} />
                 </div>
                 <Divider sx={{
                   margin: '20px 0px 20px 0px',

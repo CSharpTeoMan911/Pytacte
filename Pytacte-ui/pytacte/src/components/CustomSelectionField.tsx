@@ -18,6 +18,7 @@ type Props = {
     textColor?: string | 'default'
     borderColor?: string | 'default'
     onChange?:(option:string) => void
+    enabled?:boolean
 }
 
 const ITEM_HEIGHT = 48;
@@ -34,7 +35,7 @@ const MenuProps = {
     },
 };
 
-export default function CustomSelectionField({label, menuContents, menuBackgroundColor, textColor, borderColor, minWidth, size, onChange }: Props) {
+export default function CustomSelectionField({label, menuContents, menuBackgroundColor, textColor, borderColor, minWidth, size, onChange, enabled = true }: Props) {
 
     const MenuProps = {
         slotProps: {
@@ -64,7 +65,7 @@ export default function CustomSelectionField({label, menuContents, menuBackgroun
     };
 
     return (
-        <FormControl sx={{ m: 1, minWidth: minWidth }} size={size}>
+        <FormControl disabled={!enabled} sx={{ m: 1, minWidth: minWidth }} size={size}>
             <InputLabel id="demo-simple-select-required-label" sx={{ color: textColor, fontSize: '1rem', textAlign: 'center', '&.Mui-focused': { color: textColor } }}>
                 {label}
             </InputLabel>
@@ -74,6 +75,7 @@ export default function CustomSelectionField({label, menuContents, menuBackgroun
                 value={option}
                 label={label}
                 onChange={handleChange}
+                disabled={!enabled}
                 MenuProps={MenuProps}
                 sx={{
                     height: 'fit-content',

@@ -130,7 +130,7 @@ async def echo(websocket:ServerConnection):
                         await websocket.close()
                         
             elif not stt_ai_model_paramaters_extracted and isinstance(message, str):
-                print(f'--> Model parameters: {message}')
+                print(f'--> Model parameters: {message}\n\n____________________')
                 if model_label in message and model_label_end in message:
                     stt_model_begin = message.index(model_label) + len(model_label)
                     stt_model_end =  message.index(model_label_end)
