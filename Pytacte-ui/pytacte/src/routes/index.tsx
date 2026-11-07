@@ -199,15 +199,20 @@ function Home() {
 
             }
           }
+          else {
+            if (!modelParamatersValidated.current) {
+              console.log('!!! Validating model parameters !!!')
+              if (payload === '<Valid_Model_Parameters/>') {
+                console.log('!!! Model paramaters validated !!!')
+                modelParamatersValidated.current = true;
+              }
+              else if (payload === '<Invalid_Model_Parameters/>') {
 
-          if (!modelParamatersValidated.current && jwtValidated.current) {
-            console.log('!!! Validating model parameters !!!')
-            if (payload === '<Valid_Model_Parameters/>') {
-              console.log('!!! Model paramaters validated !!!')
-              modelParamatersValidated.current = true;
+              }
             }
-            else if (payload === '<Invalid_Model_Parameters/>') {
-
+            else
+            {
+              // Processing the server responses for the transcription job
             }
           }
         }
