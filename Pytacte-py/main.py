@@ -17,19 +17,43 @@ config = Config(use_encryption=True)
 
 loaded_config:object = {}
 
-stt_models = ['Moonshine Streaming Medium', 'Granite Speech 5.0 TurboCTC', 'Parakeet TDT-CTC 110M']
-model_precisons = ['Quantised 8', 'Full-Precision 16']
+model_options = {
+    "stt_models": {
+        "Moonshine Streaming Medium": {
+            "Full-Precision 16": SpeechToTextInterface(
+                model_name="Moonshine Streaming Medium",
+                model_precision="Full-Precision 16",
+            ),
+            "Quantised 8": SpeechToTextInterface(
+                model_name="Moonshine Streaming Medium",
+                model_precision="Quantised 8",
+            ),
+        },
+        "Granite Speech 5.0 TurboCTC": {
+            "Full-Precision 16": SpeechToTextInterface(
+                model_name="Granite Speech 5.0 TurboCTC",
+                model_precision="Full-Precision 16",
+            ),
+            "Quantised 8": SpeechToTextInterface(
+                model_name="Granite Speech 5.0 TurboCTC",
+                model_precision="Quantised 8",
+            ),
+        },
+        "Parakeet TDT-CTC 110M": {
+            "Full-Precision 16": SpeechToTextInterface(
+                model_name="Parakeet TDT-CTC 110M",
+                model_precision="Full-Precision 16",
+            ),
+            "Quantised 8": SpeechToTextInterface(
+                model_name="Parakeet TDT-CTC 110M",
+                model_precision="Quantised 8",
+            ),
+        },
+    },
+    "model_precisions": ["Quantised 8", "Full-Precision 16"],
+}
 
-granite_speech_fp16 = SpeechToTextInterface(model_name='Granite Speech 5.0 TurboCTC', precision='Full-Precision 16')
-granite_speech_q8 = SpeechToTextInterface(model_name='Granite Speech 5.0 TurboCTC', precision='Quantised 8')
-
-moonshine_speech_fp16 = SpeechToTextInterface(model_name='Moonshine Streaming Medium', precision='Full-Precision 16')
-moonshine_speech_q8 = SpeechToTextInterface(model_name='Moonshine Streaming Medium', precision='Full-Precision 16')
-
-parakeet_speech_fp16 = SpeechToTextInterface(model_name='Parakeet TDT-CTC 110M', precision='Full-Precision 16')
-parakeet_speech_q8 = SpeechToTextInterface(model_name='Parakeet TDT-CTC 110M', precision='Full-Precision 16')
-
-
+'''
 def on_shutdown():
     for interface in (
         granite_speech_fp16,
@@ -40,7 +64,7 @@ def on_shutdown():
         parakeet_speech_q8,
     ):
         interface.dispose()
-
+'''
 
 def initiate_config() -> object:
     try:
@@ -91,102 +115,108 @@ async def cert_management():
 
 async def echo(websocket:ServerConnection):
     client_ip = websocket.remote_address[0]
-    
+
     '''
     TODO: Implement rate limiter
     ________________________________
-    
+
     # RATE LIMITER CALL
-    
-    
+
+
     if limit_reached:
         websocket.close()
     '''
-    
-    
+
+
     model:SpeechToTextInterface | None = None
-    
+
     connection_initiation = time.monotonic()
-    
-    jwt_checked:bool = False 
+
+    jwt_checked:bool = False
     stt_ai_model_paramaters_extracted:bool = False
-    
-    async for message in websocket:
-        try:            
-            stt_model = ''
-            model_precision = ''
-            
-            auth_label = '<Authorisation_Token>'
-            auth_label_end = '</Authorisation_Token>'
-            
-            model_label = '<STT_Model>'
-            model_label_end = '</STT_Model>'
-            
-            model_precision_label = '<STT_Model_Precision>'
-            model_precision_label_end = '</STT_Model_Precision>'
-                
-            
-            if not jwt_checked and (time.monotonic() - connection_initiation) >= AUTH_CHECKUP_TIME:
-                websocket.respond(403, '<Invalid_Message/>')
-                websocket.close()
-                return
-            
-            
-            if not jwt_checked and isinstance(message, str):                
-                if auth_label in message and auth_label_end in message:
-                    jwt_token = ''
-                    token_begin = message.index(auth_label) + len(auth_label)
-                    token_end =  message.index(auth_label_end)
-                    
-                    for i in range(token_begin, token_end):
-                        jwt_token += message[i]
-                    
-                    # Mock validation
-                    jwt_valid = True # Mock value
-                    
-                    if jwt_valid:
-                        await websocket.send(message='<JWT_Valid/>', text=True)
-                        jwt_checked = True
+
+    try:
+        async for message in websocket:
+            try:
+                stt_model = ''
+                model_precision = ''
+
+                auth_label = '<Authorisation_Token>'
+                auth_label_end = '</Authorisation_Token>'
+
+                model_label = '<STT_Model>'
+                model_label_end = '</STT_Model>'
+
+                model_precision_label = '<STT_Model_Precision>'
+                model_precision_label_end = '</STT_Model_Precision>'
+
+
+                if not jwt_checked and (time.monotonic() - connection_initiation) >= AUTH_CHECKUP_TIME:
+                    websocket.respond(403, '<Invalid_Message/>')
+                    websocket.close()
+                    return
+
+
+                if not jwt_checked and isinstance(message, str):
+                    if auth_label in message and auth_label_end in message:
+                        jwt_token = ''
+                        token_begin = message.index(auth_label) + len(auth_label)
+                        token_end =  message.index(auth_label_end)
+
+                        for i in range(token_begin, token_end):
+                            jwt_token += message[i]
+
+                        # Mock validation
+                        jwt_valid = True # Mock value
+
+                        if jwt_valid:
+                            await websocket.send(message='<JWT_Valid/>', text=True)
+                            jwt_checked = True
+                        else:
+                            await websocket.send(message='<JWT_Invalid/>', text=True)
+                            await websocket.close()
+
+                elif not stt_ai_model_paramaters_extracted and isinstance(message, str):
+                    if model_label in message and model_label_end in message:
+                        stt_model_begin = message.index(model_label) + len(model_label)
+                        stt_model_end =  message.index(model_label_end)
+
+                        for i in range(stt_model_begin, stt_model_end):
+                            stt_model += message[i]
+
+                        model_precision_begin = message.index(model_precision_label) + len(model_precision_label)
+                        model_precision_end =  message.index(model_precision_label_end)
+
+                        for i in range(model_precision_begin, model_precision_end):
+                            model_precision += message[i]
+
+                        if (
+                            stt_model in model_options["stt_models"]
+                            and model_precision in model_options["model_precisions"]
+                            and model_precision in model_options["stt_models"][stt_model]
+                        ):
+                            if model is None:
+                                model = model_options["stt_models"][stt_model][model_precision]
+                                model.start_asr_session()
+
+                                await websocket.send(message='<Valid_Model_Parameters/>', text=True)
+                                stt_ai_model_paramaters_extracted = True
+                            else:
+                                await websocket.send(message='<Invalid_Model_Parameters/>', text=True)
+                                await websocket.close()
+
+                else:
+                    if isinstance(message, bytes):
+                        model.add_audio_chunk(message)
                     else:
-                        await websocket.send(message='<JWT_Invalid/>', text=True)
-                        await websocket.close()
-                        
-            elif not stt_ai_model_paramaters_extracted and isinstance(message, str):
-                if model_label in message and model_label_end in message:
-                    stt_model_begin = message.index(model_label) + len(model_label)
-                    stt_model_end =  message.index(model_label_end)
-                    
-                    for i in range(stt_model_begin, stt_model_end):
-                        stt_model += message[i]
-                    
-                    model_precision_begin = message.index(model_precision_label) + len(model_precision_label)
-                    model_precision_end =  message.index(model_precision_label_end)
-                    
-                    for i in range(model_precision_begin, model_precision_end):
-                        model_precision += message[i]
-                    
-                    if stt_model in stt_models and model_precision in model_precisons:
-                        model = SpeechToTextInterface(model_name=stt_model, precision=model_precision)
-                        model.stt_session()
-                        
-                        await websocket.send(message='<Valid_Model_Parameters/>', text=True)
-                        stt_ai_model_paramaters_extracted = True
-                    else:
-                        await websocket.send(message='<Invalid_Model_Parameters/>', text=True)
-                        await websocket.close()
-        
-            else:
-                if isinstance(message, bytes):
-                    model.add_audio_chunk(message)
-                    transcription = model.get_transcription()
-                    
-                    print(transcription)
-                    
-                    await websocket.send(message=transcription, text=True)
-            
-        except ValueError as ve:
-            print(f'--> [ Error: {ve} ]')
-        
+                        print(message)
+
+            except ValueError as ve:
+                print(f'--> [ Error: {ve} ]')
+    finally:
+        if model is not None:
+            model.stop_asr_session()
+
 
 async def main():
     try:
@@ -229,7 +259,8 @@ async def main():
         print(f'--> [Error: {e}]')
         raise
     finally:
-        on_shutdown()
+        pass
+        #on_shutdown()
 
 if __name__ == "__main__":
     try:

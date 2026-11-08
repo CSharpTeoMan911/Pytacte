@@ -1,8 +1,10 @@
-let mediaRecorder: MediaRecorder | undefined;
+import { Microphone } from 'decibri';
+
 let mediaStream: MediaStream | undefined;
+let mic: Microphone | undefined;
 
 export async function StartLiveAudioCapture(
-    streamAudioCallback: (bytes: Blob) => void,
+    streamAudioCallback: (bytes: ArrayBuffer) => void,
     onStreamReady: (stream: MediaStream) => void,
 ): Promise<[string, boolean]> {
     try {
@@ -17,17 +19,14 @@ export async function StartLiveAudioCapture(
 
             mediaStream = stream;
             onStreamReady(stream);
-            mediaRecorder = new MediaRecorder(stream);
 
-            mediaRecorder.ondataavailable = async(event) => {
-                if (event.data.size === 0) return;
-                const bytes:Blob = await event.data;
-
-                streamAudioCallback(bytes);
-            };
-            mediaRecorder.start(10);
-            
-
+            // Float32 - native browser format, no conversion
+            mic = new Microphone({sampleRate:16000, dtype: 'float32', channels:1 });
+            mic.on('data', (chunk:Buffer<ArrayBufferLike>) => {
+                console.log('Extracted');
+                streamAudioCallback(chunk.buffer as ArrayBuffer)
+            });
+            mic.start();
 
             return ['Media device initialised', true];
         }
@@ -36,6 +35,7 @@ export async function StartLiveAudioCapture(
         }
     }
     catch (e) {
+        console.log(e)
         const errorMessage = e instanceof Error ? e.message : String(e);
         console.error('Unable to start audio capture:', errorMessage);
         return [errorMessage, false];
@@ -45,13 +45,12 @@ export async function StartLiveAudioCapture(
 export function StopAudioCapture(): [string, boolean] {
     try {
         //mediaRecorder?.removeEventListener('dataavailable', eventListener, true);
-        mediaRecorder?.stop();
-        mediaStream?.getTracks().forEach((track) => track.stop());
+        mic?.stop();
 
-        mediaRecorder = undefined;
+        mic = undefined;
         mediaStream = undefined;
 
-        return['Media device capture stopped', true]
+        return ['Media device capture stopped', true]
     }
     catch (e) {
         const errorMessage = e instanceof Error ? e.message : String(e);

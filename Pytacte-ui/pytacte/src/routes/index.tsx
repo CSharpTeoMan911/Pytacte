@@ -102,7 +102,7 @@ function Home() {
 
 
 
-  function StreamAudioToServer(bytes: Blob) {
+  function StreamAudioToServer(bytes: ArrayBuffer) {
     if (jwtValidated.current && modelParamatersValidated.current) {
       webSocketStreamingRef.current?.postMessage(bytes);
     }
