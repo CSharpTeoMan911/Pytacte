@@ -13,12 +13,14 @@ import MicOffIcon from '@mui/icons-material/MicOff'
 import MicIcon from '@mui/icons-material/Mic'
 import OpenInFull from '@mui/icons-material/OpenInFull'
 import CloseFullscreen from '@mui/icons-material/CloseFullscreen'
+import SaveIcon from '@mui/icons-material/Save';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import LiveWaveformVisualiser from '#/components/LiveWaveformVisualiser'
 import CodeMirror from '@uiw/react-codemirror'
 import { EditorView } from '@codemirror/view'
 import { StartLiveAudioCapture, StopAudioCapture } from '../utils/LiveAudioCapture'
 import { getJwtToken } from '../firebase/firebase_auth'
-import { darken } from '@mui/material/styles'
+import { jsPDF } from "jspdf";
 
 
 const transcriptionEditorTheme = EditorView.theme({
@@ -73,7 +75,7 @@ function Home() {
   let markerIndex: number = 0;
 
   const [webSocketStreaming, setWebSocketStreaming] = useState<Worker | undefined>(undefined);
-  const webSocketStreamingRef = useRef<Worker | undefined>(undefined);    
+  const webSocketStreamingRef = useRef<Worker | undefined>(undefined);
 
   const shutdownRequestedRef = useRef(false);
   const webWorkerInit = useRef<boolean>(false);
@@ -98,8 +100,11 @@ function Home() {
 
 
 
-  const [transcription, setTranscription] = useState('')
+  const transcription = useRef<string>('');
+  const [transcriptionValue, setTranscriptionValue] = useState<string>('');
 
+  const [saveDocument, setSaveDocument] = useState<boolean>();
+  const [clearTranscription, setClearTranscription] = useState<boolean>();
 
 
   function StreamAudioToServer(bytes: ArrayBuffer) {
@@ -123,6 +128,14 @@ function Home() {
   }
 
 
+  function sanitizePlainText(value: string): string {
+    return value
+      .normalize('NFC')
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+      .trim();
+  }
+
+
   useEffect(() => {
     getIfUserLoggedIn().then((isUserLoggedIn) => {
       if (isUserLoggedIn) {
@@ -141,20 +154,10 @@ function Home() {
 
 
 
-  /*
-  TODO: CRITICAL BUG
-  [WARNING] -> The current hook is using stale states that were cached during the initiation of the hook
-               when the 'webSocketStreaming' state changed. One possible fix is to install all the hooks
-               on the useState hook and manage them using logic. Another possible solution is to separate
-               the opration into multiple states that are inter-connected, but this will create 
-               more friction.
-  */
   useEffect(() => {
-    console.log(webSocketStreaming)
     if (webSocketStreaming) {
       webSocketStreaming.onmessage = (event: MessageEvent) => {
         const [isStatus, payload] = event.data;
-        console.log(payload)
         if (isStatus) {
 
 
@@ -171,7 +174,6 @@ function Home() {
 
             if (!jwtValidatationProcedureInitiated.current) {
               getJwtToken().then((result) => {
-                console.log('!!! Initiating JWT validation !!!')
                 const successful = result[0]
                 const payload = result[1]
                 if (successful) {
@@ -179,20 +181,18 @@ function Home() {
                   jwtValidatationProcedureInitiated.current = true;
                 }
                 else {
-                  setTranscription(transcription + payload);
                 }
               });
             }
           }
         } else {
 
-          console.log('jwtValidated: ' + jwtValidated.current)
+
           if (!jwtValidated.current) {
             if (payload === '<JWT_Valid/>') {
               jwtValidated.current = true;
 
               if (!modelParamatersValidatationProcedureInitiated.current) {
-                console.log('!!! Model validation parameters initaited !!!')
                 webSocketStreaming?.postMessage(`<STT_Model>${model.current}</STT_Model><STT_Model_Precision>${precision.current}</STT_Model_Precision>`);
                 modelParamatersValidatationProcedureInitiated.current = true;
               }
@@ -203,18 +203,22 @@ function Home() {
           }
           else {
             if (!modelParamatersValidated.current) {
-              console.log('!!! Validating model parameters !!!')
+
               if (payload === '<Valid_Model_Parameters/>') {
-                console.log('!!! Model paramaters validated !!!')
                 modelParamatersValidated.current = true;
               }
               else if (payload === '<Invalid_Model_Parameters/>') {
 
               }
             }
-            else
-            {
+            else {
+              const message = String(payload);
 
+              if (message.trim() !== '') {
+                transcription.current += payload + ' '
+                console.log(`[${transcription.current}]`)
+                setTranscriptionValue(transcription.current);
+              }
             }
           }
         }
@@ -321,6 +325,28 @@ function Home() {
     return () => resizeObserver.disconnect()
   }, [authReady])
 
+
+  useEffect(() => {
+    if (saveDocument) {
+      const sanitisedTranscription: string = sanitizePlainText(transcription.current);
+
+      const doc = new jsPDF();
+
+      doc.text(sanitisedTranscription, 10, 10);
+      doc.save("pyctate-transcription.pdf");
+
+      setSaveDocument(false);
+    }
+  }, [saveDocument])
+
+  useEffect(() => {
+    if (clearTranscription) {
+      transcription.current = '';
+      setTranscriptionValue('')
+      setClearTranscription(false);
+    }
+  }, [clearTranscription])
+
   if (!authReady) return null
 
   return (
@@ -375,7 +401,7 @@ function Home() {
                   <Typography sx={{ marginLeft: '10px', color: '#003b5f', fontFamily: 'Roboto Mono, monospace', marginBottom: '10px' }} variant='h6'>
                     // Select model precision
                   </Typography>
-                  <CustomSelectionField label='Model Precision' minWidth='40%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={['Quantised 8', 'Full-Precision 16']} enabled={precisionSelectionEnabled} onChange={(value) => { precision.current = value; }} />
+                  <CustomSelectionField label='Model Precision' minWidth='40%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={model.current === 'Nemo Parakeet TDT-CTC 110M' ? ['Quantised 8'] : ['Quantised 8', 'Full-Precision 16']} enabled={precisionSelectionEnabled} onChange={(value) => { precision.current = value; }} />
                 </div>
                 <Divider sx={{
                   margin: '20px 0px 20px 0px',
@@ -419,8 +445,37 @@ function Home() {
               <CustomPaper position={expandTranscriptionPanel ? 'absolute' : 'relative'} top={expandTranscriptionPanel ? '0' : 'default'} left={expandTranscriptionPanel ? '0' : 'default'} zIndex={expandTranscriptionPanel ? 100 : 0} background_color='#f8f8f8' boxShadow='1px 0px 10px #54b9f3' width={expandTranscriptionPanel ? '100vw' : '100%'} height={expandTranscriptionPanel ? '100vh' : '100%'} padding='6px'>
                 <div style={{ display: 'flex', borderRadius: '3px', textAlign: 'start', backgroundColor: '#f8f8f8', flexDirection: 'column', boxSizing: 'border-box', width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
                   <div style={{ display: 'grid', backgroundColor: '#f8f8f8', gridTemplateColumns: '1.8fr 0.2fr', width: '100%', justifyContent: 'center', height: '40px' }}>
-                    <div style={{ width: '100%', height: '100%', borderRadius: '10px' }} />
-                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'top', alignContent: 'center', width: '100%', height: '100%', borderRadius: '10px' }}>
+                    <div style={{ display: 'gird', gridTemplateColumns: '1fr 1fr', width: '100%', height: '100%', borderRadius: '10px' }} >
+                      <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'start', width: '100%', height: '100%', borderRadius: '10px' }}>
+
+                        <IconButton aria-label="Clear Transcription" color="primary" sx={{
+                          height: 'fit-content',
+                          alignSelf: 'center',
+                          color: '#003b5f',
+                          marginRight: '20px'
+                        }} onClick={() => { setClearTranscription(true) }} >
+                          <RestartAltIcon sx={{
+                            height: '20px',
+                            width: '20px'
+                          }} />
+                        </IconButton>
+
+                        <IconButton aria-label="Save transcription" color="primary" sx={{
+                          height: 'fit-content',
+                          alignSelf: 'center',
+                          color: '#003b5f'
+                        }} onClick={() => { setSaveDocument(true) }} >
+                          <SaveIcon sx={{
+                            height: '20px',
+                            width: '20px'
+                          }} />
+                        </IconButton>
+
+                      </div>
+                      <div />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'end', width: '100%', height: '100%', borderRadius: '10px' }}>
                       <IconButton aria-label="Expand off" color="primary" sx={{
                         height: 'fit-content',
                         alignSelf: 'center',
@@ -453,8 +508,7 @@ function Home() {
                     <CodeMirror
                       readOnly={true}
                       aria-label="Transcription"
-                      value={transcription}
-                      onChange={(value) => setTranscription(value)}
+                      value={transcriptionValue}
                       extensions={transcriptionEditorExtensions}
                       basicSetup={{
                         lineNumbers: false,

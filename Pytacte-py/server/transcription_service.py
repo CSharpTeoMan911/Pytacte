@@ -11,13 +11,13 @@ import sherpa_onnx
 # Configuration
 # ------------------------------------------------------------
 
+
 class TrasncriptionResult:
     def __init__(self):
-        self.result = ''
+        self.result = ""
+
 
 class SpeechToTextInterface:
-    ASR_FLAG = threading.Event()
-
     BACKEND = "auto"
 
     SAMPLE_RATE = 16000
@@ -104,21 +104,21 @@ class SpeechToTextInterface:
         },
     }
 
-    def __init__(self, model_name:str, model_precision:str):
+    def __init__(self, model_name: str, model_precision: str):
         MODEL_PATH = Path(self.MODELS[model_name]["precision"][model_precision])
 
-
         self.recognizer = sherpa_onnx.OfflineRecognizer.from_nemo_ctc(
-                model=str(MODEL_PATH),
-                tokens=str(Path(self.MODELS[model_name]['path'], 'tokens.txt')),
-                num_threads=2,
-                sample_rate=16000,
-                feature_dim=80,
-                decoding_method="greedy_search",
-            )
+            model=str(MODEL_PATH),
+            tokens=str(Path(self.MODELS[model_name]["path"], "tokens.txt")),
+            num_threads=2,
+            sample_rate=16000,
+            feature_dim=80,
+            decoding_method="greedy_search",
+        )
 
-
-    def add_audio_chunk(self, audio_chunk:bytes | bytearray| memoryview, audio_queue:queue.Queue):
+    def add_audio_chunk(
+        self, audio_chunk: bytes | bytearray | memoryview, audio_queue: queue.Queue
+    ):
         if isinstance(audio_chunk, (bytes, bytearray, memoryview)):
             samples = np.frombuffer(audio_chunk, dtype=np.float32)
         else:
@@ -129,15 +129,26 @@ class SpeechToTextInterface:
         if samples.size:
             audio_queue.put_nowait(samples)
 
-    def submit_utterance(self, utterance:list, speech_frame_count:int, minimum_frames:int, asr_queue:queue.Queue):
+    def submit_utterance(
+        self,
+        utterance: list,
+        speech_frame_count: int,
+        minimum_frames: int,
+        asr_queue: queue.Queue,
+    ):
         if speech_frame_count < minimum_frames or not utterance:
             return
 
         audio = np.concatenate(utterance).astype(np.float32, copy=False)
         asr_queue.put(audio)
 
-    def __asr_worker__(self, asr_queue:queue.Queue, recognition_result:TrasncriptionResult):
-        while True:
+    def __asr_worker__(
+        self,
+        asr_queue: queue.Queue,
+        recognition_result: TrasncriptionResult,
+        thread_flag: threading.Event,
+    ):
+        while not thread_flag.is_set():
             audio = asr_queue.get()
 
             try:
@@ -154,7 +165,6 @@ class SpeechToTextInterface:
                 self.recognizer.decode_stream(stream)
 
                 text = stream.result.text.strip()
-                print(text)
 
                 if text:
                     recognition_result.result = text
@@ -162,7 +172,13 @@ class SpeechToTextInterface:
             finally:
                 asr_queue.task_done()
 
-    def __transcription_service__(self, audio_queue:queue.Queue, asr_queue:queue.Queue, recognition_result:TrasncriptionResult):
+    def __transcription_service__(
+        self,
+        audio_queue: queue.Queue,
+        asr_queue: queue.Queue,
+        recognition_result: TrasncriptionResult,
+        thread_flag: threading.Event,
+    ):
         silence_limit = max(1, self.END_SILENCE_MS // self.FRAME_MS)
         minimum_frames = max(1, self.MIN_SPEECH_MS // self.FRAME_MS)
         pre_roll_frames = max(1, self.PRE_ROLL_MS // self.FRAME_MS)
@@ -170,7 +186,7 @@ class SpeechToTextInterface:
         worker = threading.Thread(
             target=self.__asr_worker__,
             daemon=True,
-            args=(asr_queue, recognition_result)
+            args=(asr_queue, recognition_result, thread_flag),
         )
         worker.start()
 
@@ -182,7 +198,7 @@ class SpeechToTextInterface:
         speech_frame_count = 0
 
         try:
-            while not self.ASR_FLAG.is_set():
+            while not thread_flag.is_set():
                 try:
                     frame = audio_queue.get(timeout=1)
                 except queue.Empty:
@@ -216,10 +232,10 @@ class SpeechToTextInterface:
 
                     if silence_frames >= silence_limit:
                         self.submit_utterance(
-                            utterance,
-                            speech_frame_count,
-                            minimum_frames,
-                            asr_queue
+                            utterance=utterance,
+                            speech_frame_count=speech_frame_count,
+                            minimum_frames=minimum_frames,
+                            asr_queue=asr_queue,
                         )
 
                         speaking = False
@@ -231,24 +247,31 @@ class SpeechToTextInterface:
         finally:
             if speaking and utterance:
                 self.submit_utterance(
-                    utterance,
-                    speech_frame_count,
-                    minimum_frames,
+                    utterance=utterance,
+                    speech_frame_count=speech_frame_count,
+                    minimum_frames=minimum_frames,
+                    asr_queue=asr_queue,
                 )
 
             asr_queue.join()
             asr_queue.put(None)
 
-    def start_asr_session(self, audio_queue:queue.Queue, asr_queue:queue.Queue, recognition_result:TrasncriptionResult):
+    def start_asr_session(
+        self,
+        audio_queue: queue.Queue,
+        asr_queue: queue.Queue,
+        recognition_result: TrasncriptionResult,
+        thread_flag: threading.Event,
+    ):
         asr_thread = threading.Thread(
             target=self.__transcription_service__,
             daemon=True,
             name="ASRSession",
-            args=(audio_queue, asr_queue, recognition_result)
+            args=(
+                audio_queue,
+                asr_queue,
+                recognition_result,
+                thread_flag,
+            ),
         )
         asr_thread.start()
-
-    def stop_asr_session(self):
-        self.ASR_FLAG.set()
-        if self.model is not None:
-            self.model.close()

@@ -2,6 +2,7 @@ import asyncio
 import os
 import queue
 import ssl
+import threading
 import time
 from pathlib import Path
 
@@ -125,6 +126,7 @@ async def echo(websocket:ServerConnection):
         websocket.close()
     '''
 
+    ASR_FLAG = threading.Event()
     audio_queue = queue.Queue()
     asr_queue = queue.Queue()
     recognition_result:TrasncriptionResult = TrasncriptionResult()
@@ -198,7 +200,7 @@ async def echo(websocket:ServerConnection):
                         ):
                             if model is None:
                                 model = model_options["stt_models"][stt_model][model_precision]
-                                model.start_asr_session(audio_queue=audio_queue, asr_queue=asr_queue, recognition_result=recognition_result)
+                                model.start_asr_session(audio_queue=audio_queue, asr_queue=asr_queue, recognition_result=recognition_result, thread_flag=ASR_FLAG)
 
                                 await websocket.send(message='<Valid_Model_Parameters/>', text=True)
                                 stt_ai_model_paramaters_extracted = True
@@ -208,9 +210,11 @@ async def echo(websocket:ServerConnection):
 
                 else:
                     if isinstance(message, bytes) and isinstance(model, SpeechToTextInterface):
-                        print('Audio')
                         model.add_audio_chunk(audio_chunk=message, audio_queue=audio_queue)
-                        await websocket.send(message=recognition_result.result, text=True)
+                        recognition_result.result = recognition_result.result.strip()
+                        if recognition_result.result != '':
+                            await websocket.send(message=recognition_result.result, text=True)
+                        recognition_result.result = ''
                     else:
                         print(message)
 
@@ -220,6 +224,9 @@ async def echo(websocket:ServerConnection):
     except Exception as e:  # noqa: BLE001, F841, S110
         print(e)
         pass
+    
+    finally:
+        ASR_FLAG.set()
 
 async def main():
     try:

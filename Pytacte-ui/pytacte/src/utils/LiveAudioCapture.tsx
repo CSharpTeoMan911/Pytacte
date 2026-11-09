@@ -23,9 +23,9 @@ export async function StartLiveAudioCapture(
             // Float32 - native browser format, no conversion
             mic = new Microphone({sampleRate:16000, dtype: 'float32', channels:1 });
             mic.on('data', (chunk:Buffer<ArrayBufferLike>) => {
-                console.log('Extracted');
                 streamAudioCallback(chunk.buffer as ArrayBuffer)
             });
+            (mic as unknown as { start: () => void }).start();
 
             return ['Media device initialised', true];
         }
