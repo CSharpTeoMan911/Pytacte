@@ -365,7 +365,7 @@ function Home() {
                   <Typography sx={{ marginLeft: '10px', color: '#003b5f', fontFamily: 'Roboto Mono, monospace', marginBottom: '10px' }} variant='h6'>
                     // Select STT Model
                   </Typography>
-                  <CustomSelectionField label='Model' size='medium' minWidth='80%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={['Moonshine Streaming Medium', 'Granite Speech 5.0 TurboCTC', 'Parakeet TDT-CTC 110M']} enabled={modelSelectionEnabled} onChange={(value) => { model.current = value; }} />
+                  <CustomSelectionField label='Model' size='medium' minWidth='80%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={['Nemo CTC Critinet 512', 'Nemo CTC Conformer Large', 'Nemo Parakeet TDT-CTC 110M']} enabled={modelSelectionEnabled} onChange={(value) => { model.current = value; }} />
                 </div>
                 <Divider sx={{
                   margin: '20px 0px 20px 0px',

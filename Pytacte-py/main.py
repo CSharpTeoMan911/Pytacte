@@ -1,12 +1,13 @@
 import asyncio
 import os
+import queue
 import ssl
 import time
 from pathlib import Path
 
 from websockets.asyncio.server import ServerConnection, serve
 
-from server.transcription_service import SpeechToTextInterface
+from server.transcription_service import SpeechToTextInterface, TrasncriptionResult
 from utils.ConfigManager import Config
 from utils.Crytography import RSA_Crypto
 
@@ -17,40 +18,37 @@ config = Config(use_encryption=True)
 
 loaded_config:object = {}
 
+
 model_options = {
     "stt_models": {
-        "Moonshine Streaming Medium": {
-            "Full-Precision 16": SpeechToTextInterface(
-                model_name="Moonshine Streaming Medium",
-                model_precision="Full-Precision 16",
+        "Nemo CTC Critinet 512": {
+            "Full-Precision 32": SpeechToTextInterface(
+                model_name="Nemo CTC Critinet 512",
+                model_precision="Full-Precision 32",
             ),
             "Quantised 8": SpeechToTextInterface(
-                model_name="Moonshine Streaming Medium",
+                model_name="Nemo CTC Critinet 512",
                 model_precision="Quantised 8",
             ),
         },
-        "Granite Speech 5.0 TurboCTC": {
-            "Full-Precision 16": SpeechToTextInterface(
-                model_name="Granite Speech 5.0 TurboCTC",
-                model_precision="Full-Precision 16",
+        "Nemo CTC Conformer Large": {
+            "Full-Precision 32": SpeechToTextInterface(
+                model_name="Nemo CTC Conformer Large",
+                model_precision="Full-Precision 32",
             ),
             "Quantised 8": SpeechToTextInterface(
-                model_name="Granite Speech 5.0 TurboCTC",
+                model_name="Nemo CTC Conformer Large",
                 model_precision="Quantised 8",
             ),
         },
-        "Parakeet TDT-CTC 110M": {
-            "Full-Precision 16": SpeechToTextInterface(
-                model_name="Parakeet TDT-CTC 110M",
-                model_precision="Full-Precision 16",
-            ),
+        "Nemo Parakeet TDT-CTC 110M": {
             "Quantised 8": SpeechToTextInterface(
-                model_name="Parakeet TDT-CTC 110M",
+                model_name="Nemo Parakeet TDT-CTC 110M",
                 model_precision="Quantised 8",
             ),
         },
     },
-    "model_precisions": ["Quantised 8", "Full-Precision 16"],
+    "model_precisions": ["Quantised 8", "Full-Precision 32"],
 }
 
 '''
@@ -127,6 +125,9 @@ async def echo(websocket:ServerConnection):
         websocket.close()
     '''
 
+    audio_queue = queue.Queue()
+    asr_queue = queue.Queue()
+    recognition_result:TrasncriptionResult = TrasncriptionResult()
 
     model:SpeechToTextInterface | None = None
 
@@ -197,7 +198,7 @@ async def echo(websocket:ServerConnection):
                         ):
                             if model is None:
                                 model = model_options["stt_models"][stt_model][model_precision]
-                                model.start_asr_session()
+                                model.start_asr_session(audio_queue=audio_queue, asr_queue=asr_queue, recognition_result=recognition_result)
 
                                 await websocket.send(message='<Valid_Model_Parameters/>', text=True)
                                 stt_ai_model_paramaters_extracted = True
@@ -206,17 +207,19 @@ async def echo(websocket:ServerConnection):
                                 await websocket.close()
 
                 else:
-                    if isinstance(message, bytes):
-                        model.add_audio_chunk(message)
+                    if isinstance(message, bytes) and isinstance(model, SpeechToTextInterface):
+                        print('Audio')
+                        model.add_audio_chunk(audio_chunk=message, audio_queue=audio_queue)
+                        await websocket.send(message=recognition_result.result, text=True)
                     else:
                         print(message)
 
             except ValueError as ve:
                 print(f'--> [ Error: {ve} ]')
-    finally:
-        if model is not None:
-            model.stop_asr_session()
-
+                
+    except Exception as e:  # noqa: BLE001, F841, S110
+        print(e)
+        pass
 
 async def main():
     try:

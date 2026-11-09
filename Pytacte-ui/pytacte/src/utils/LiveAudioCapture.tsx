@@ -26,7 +26,6 @@ export async function StartLiveAudioCapture(
                 console.log('Extracted');
                 streamAudioCallback(chunk.buffer as ArrayBuffer)
             });
-            mic.start();
 
             return ['Media device initialised', true];
         }
