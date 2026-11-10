@@ -17,6 +17,12 @@
     "rules": "database.rules.json"
   },
   "auth": {
-    "providers": {}
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "pytacte",
+        "supportEmail": "support@pytacte.firebaseapp.com"
+      }
+    }
   }
 }

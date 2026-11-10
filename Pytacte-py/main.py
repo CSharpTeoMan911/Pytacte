@@ -216,7 +216,7 @@ async def echo(websocket:ServerConnection):
                             await websocket.send(message=recognition_result.result, text=True)
                         recognition_result.result = ''
                     else:
-                        print(message)
+                        pass
 
             except ValueError as ve:
                 print(f'--> [ Error: {ve} ]')

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, createElement } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { getIfUserLoggedIn } from '../firebase/firebase_auth'
 import RootPanel from '#/components/RootPanel'
@@ -21,6 +21,7 @@ import { EditorView } from '@codemirror/view'
 import { StartLiveAudioCapture, StopAudioCapture } from '../utils/LiveAudioCapture'
 import { getJwtToken } from '../firebase/firebase_auth'
 import { jsPDF } from "jspdf";
+import '../../fonts/Tiny5-Duo-normal.js';
 
 
 const transcriptionEditorTheme = EditorView.theme({
@@ -92,8 +93,13 @@ function Home() {
   const [modelPanelHeight, setModelPanelHeight] = useState<number>();
   const modelPanelRef = useRef<HTMLDivElement>(null);
 
+
   const model = useRef<string>('');
   const precision = useRef<string>('');
+
+  const [currentModel, setCurrentModel] = useState<string>('');
+  const [currentPrecision, setCurrentPrecision] = useState<string>('');
+
   const [modelSelectionEnabled, setModelSelectionEnabled] = useState(true);
   const [precisionSelectionEnabled, setPrecisionSelectionEnabled] = useState(true);
 
@@ -133,6 +139,10 @@ function Home() {
       .normalize('NFC')
       .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
       .trim();
+  }
+
+  function isSymbol(char: string): boolean {
+    return /^\p{S}$/u.test(char);
   }
 
 
@@ -212,11 +222,13 @@ function Home() {
               }
             }
             else {
-              const message = String(payload);
+              const _message = String(payload);
 
-              if (message.trim() !== '') {
-                transcription.current += payload + ' '
-                console.log(`[${transcription.current}]`)
+              if (_message.trim() !== '') {
+                const terminator = isSymbol(_message[_message.length - 1]) ? '' : '.';
+                const message = `${_message[0].toUpperCase()}${_message.slice(1, _message.length)}${terminator} `;
+                transcription.current += message;
+                console.log(`[${transcription.current}]`);
                 setTranscriptionValue(transcription.current);
               }
             }
@@ -328,14 +340,51 @@ function Home() {
 
   useEffect(() => {
     if (saveDocument) {
-      const sanitisedTranscription: string = sanitizePlainText(transcription.current);
 
-      const doc = new jsPDF();
+      document.fonts.load('12px "Tiny5 Duo"').then(() => {
+        document.fonts.ready.then(() => {
+          const sanitisedText: string = sanitizePlainText(transcription.current);
 
-      doc.text(sanitisedTranscription, 10, 10);
-      doc.save("pyctate-transcription.pdf");
+          const pdf = new jsPDF();
+          const margin = 15;
+          const pageWidth = pdf.internal.pageSize.getWidth();
+          const pageHeight = pdf.internal.pageSize.getHeight();
+          const lineHeight = 7; // mm; adjust for your font size
 
-      setSaveDocument(false);
+          pdf.setFontSize(16);
+          pdf.setTextColor(248, 248, 248); // text color
+
+          pdf.setFont('Tiny5-Duo', 'normal');
+
+          const lines = pdf.splitTextToSize(
+            sanitisedText,
+            pageWidth - margin * 2,
+          );
+
+          const paintBackground = () => {
+            pdf.setFillColor(0, 59, 95); // background color
+            pdf.rect(0, 0, pageWidth, pageHeight, 'F');
+          };
+
+          paintBackground();
+
+          let y = margin;
+
+          for (const line of lines) {
+            if (y + lineHeight > pageHeight - margin) {
+              pdf.addPage();
+              paintBackground();
+              y = margin;
+            }
+
+            pdf.text(line, margin, y);
+            y += lineHeight;
+          }
+          
+          pdf.save('pyctate-transcription.pdf');
+          setSaveDocument(false);
+        });
+      });
     }
   }, [saveDocument])
 
@@ -347,6 +396,18 @@ function Home() {
     }
   }, [clearTranscription])
 
+  useEffect(() => {
+    if (currentModel != model.current) {
+      model.current = currentModel;
+    }
+  }, [currentModel])
+
+  useEffect(() => {
+    if (currentPrecision != precision.current) {
+      precision.current = currentPrecision;
+    }
+  }, [currentPrecision])
+
   if (!authReady) return null
 
   return (
@@ -355,8 +416,6 @@ function Home() {
         @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=Micro+5&family=Tiny5+Duo:ital,wght@0,100..900;1,100..900&display=swap');
       </style>
-
-
       <CustomAppBar
         logoWidth="50px"
         logoHeight="50px"
@@ -391,7 +450,7 @@ function Home() {
                   <Typography sx={{ marginLeft: '10px', color: '#003b5f', fontFamily: 'Roboto Mono, monospace', marginBottom: '10px' }} variant='h6'>
                     // Select STT Model
                   </Typography>
-                  <CustomSelectionField label='Model' size='medium' minWidth='80%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={['Nemo CTC Critinet 512', 'Nemo CTC Conformer Large', 'Nemo Parakeet TDT-CTC 110M']} enabled={modelSelectionEnabled} onChange={(value) => { model.current = value; }} />
+                  <CustomSelectionField label='Model' size='medium' minWidth='80%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={['Nemo CTC Critinet 512', 'Nemo CTC Conformer Large', 'Nemo Parakeet TDT-CTC 110M']} enabled={modelSelectionEnabled} onChange={setCurrentModel} />
                 </div>
                 <Divider sx={{
                   margin: '20px 0px 20px 0px',
@@ -401,7 +460,7 @@ function Home() {
                   <Typography sx={{ marginLeft: '10px', color: '#003b5f', fontFamily: 'Roboto Mono, monospace', marginBottom: '10px' }} variant='h6'>
                     // Select model precision
                   </Typography>
-                  <CustomSelectionField label='Model Precision' minWidth='40%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={model.current === 'Nemo Parakeet TDT-CTC 110M' ? ['Quantised 8'] : ['Quantised 8', 'Full-Precision 16']} enabled={precisionSelectionEnabled} onChange={(value) => { precision.current = value; }} />
+                  <CustomSelectionField label='Model Precision' minWidth='40%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={currentModel === 'Nemo Parakeet TDT-CTC 110M' ? ['Quantised 8'] : ['Quantised 8', 'Full-Precision 32']} enabled={precisionSelectionEnabled} onChange={setCurrentPrecision} />
                 </div>
                 <Divider sx={{
                   margin: '20px 0px 20px 0px',
@@ -506,6 +565,7 @@ function Home() {
                     }} />
 
                     <CodeMirror
+                      id='transcription_container'
                       readOnly={true}
                       aria-label="Transcription"
                       value={transcriptionValue}
