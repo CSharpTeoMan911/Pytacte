@@ -12,15 +12,17 @@ from firebase.firebase_auth import FirebaseAuth
 from server.transcription_service import SpeechToTextInterface, TrasncriptionResult
 from utils.ConfigManager import Config
 from utils.Crytography import RSA_Crypto
+from utils.IpRateLimiter import RateLimiter
 
-AUTH_CHECKUP_TIME:float = 5 # 5 seconds timeout
-FILE_NAME = 'server_config.json'
+AUTH_CHECKUP_TIME: float = 5  # 5 seconds timeout
+FILE_NAME = "server_config.json"
 
 config = Config(use_encryption=True)
 
 auth = FirebaseAuth()
+ip_rate_limiter = RateLimiter()
 
-loaded_config:object = {}
+loaded_config: object = {}
 
 
 model_options = {
@@ -55,7 +57,7 @@ model_options = {
     "model_precisions": ["Quantised 8", "Full-Precision 32"],
 }
 
-'''
+"""
 def on_shutdown():
     for interface in (
         granite_speech_fp16,
@@ -66,132 +68,157 @@ def on_shutdown():
         parakeet_speech_q8,
     ):
         interface.dispose()
-'''
+"""
+
 
 def initiate_config() -> object:
     try:
         result = config.read_config_file(FILE_NAME)
-        
+
         if not result.successful:
-            print(f'--> [ Error: {result.message}]')
+            print(f"--> [ Error: {result.message}]")
             result = config.create_config_file(FILE_NAME)
-            
+
             if result.successful:
-                print(f'--> [{result.message}]')
+                print(f"--> [{result.message}]")
                 return result.payload
         else:
             return result.payload
-                
+
     except Exception as e:
-        print(f'--> [ Error: {e}]')
+        print(f"--> [ Error: {e}]")
         raise
-    
+
+
 async def cert_management():
     try:
-        if loaded_config['security']['use_encryption']:
-            
+        if loaded_config["security"]["use_encryption"]:
             crypto = RSA_Crypto()
-            server_cert_path = Path(Path.cwd(), 'data', loaded_config['security']['server_cert'])
-            private_key = Path(Path.cwd(), 'data', loaded_config['security']['private_key'])
-            
+            server_cert_path = Path(
+                Path.cwd(), "data", loaded_config["security"]["server_cert"]
+            )
+            private_key = Path(
+                Path.cwd(), "data", loaded_config["security"]["private_key"]
+            )
+
             if server_cert_path.exists():
-                print('--> [ The server certificate exist. ]')
-                    
-            elif loaded_config['security']['generate_self_signed']:
+                print("--> [ The server certificate exist. ]")
+
+            elif loaded_config["security"]["generate_self_signed"]:
                 private_key = crypto.generate_rsa_key()
-                
-                public_key_bytes, private_key_bytes = await crypto.serialise_rsa_key_pair(key=private_key, passwordless=not loaded_config['security']['encrypt_cert'])
-                
-                cert_gen_path:str = await crypto.write_keys_to_cert(loaded_config['security']['server_cert'], public_key_bytes, private_key_bytes, not loaded_config['security']['encrypt_cert'])
-                private_key_gen_path:str = crypto.write_rsa_key_to_file(loaded_config['security']['private_key'], private_key_bytes)
-                
-                print('\n\n--> [[!!!] Generating certificate and private key [!!!]]')
-                print(f'--> [Server certificate path: {cert_gen_path}]')
-                print(f'--> [Server private key path: {private_key_gen_path}]')
-                print('\n\n')
+
+                (
+                    public_key_bytes,
+                    private_key_bytes,
+                ) = await crypto.serialise_rsa_key_pair(
+                    key=private_key,
+                    passwordless=not loaded_config["security"]["encrypt_cert"],
+                )
+
+                cert_gen_path: str = await crypto.write_keys_to_cert(
+                    loaded_config["security"]["server_cert"],
+                    public_key_bytes,
+                    private_key_bytes,
+                    not loaded_config["security"]["encrypt_cert"],
+                )
+                private_key_gen_path: str = crypto.write_rsa_key_to_file(
+                    loaded_config["security"]["private_key"], private_key_bytes
+                )
+
+                print("\n\n--> [[!!!] Generating certificate and private key [!!!]]")
+                print(f"--> [Server certificate path: {cert_gen_path}]")
+                print(f"--> [Server private key path: {private_key_gen_path}]")
+                print("\n\n")
             else:
-                raise RuntimeError('--> [ Error: The public key, private key, or certificate are not available. ]')
+                raise RuntimeError(
+                    "--> [ Error: The public key, private key, or certificate are not available. ]"
+                )
     except Exception as e:
-        print(f'--> [ Error: {e}]')
+        print(f"--> [ Error: {e}]")
         raise
 
-async def echo(websocket:ServerConnection):
+
+async def echo(websocket: ServerConnection):
     client_ip = websocket.remote_address[0]
 
-    '''
-    TODO: Implement rate limiter
-    ________________________________
+    """
+    forwarded_for = websocket.request.headers.get("X-Forwarded-For")
+client_ip = (
+    forwarded_for.split(",")[0].strip()
+    if forwarded_for
+    else websocket.remote_address[0]
+)
+    """
 
-    # RATE LIMITER CALL
-
-
-    if limit_reached:
-        websocket.close()
-    '''
+    if not ip_rate_limiter.is_allowed(client_ip):
+        await websocket.close(code=1013, reason="Rate limit exceeded")
+        return
 
     ASR_FLAG = threading.Event()
     audio_queue = queue.Queue()
     asr_queue = queue.Queue()
-    recognition_result:TrasncriptionResult = TrasncriptionResult()
+    recognition_result: TrasncriptionResult = TrasncriptionResult()
 
-    model:SpeechToTextInterface | None = None
+    model: SpeechToTextInterface | None = None
 
     connection_initiation = time.monotonic()
 
-    jwt_checked:bool = False
-    stt_ai_model_paramaters_extracted:bool = False
+    jwt_checked: bool = False
+    stt_ai_model_paramaters_extracted: bool = False
 
     try:
         async for message in websocket:
             try:
-                stt_model = ''
-                model_precision = ''
+                stt_model = ""
+                model_precision = ""
 
-                auth_label = '<Authorisation_Token>'
-                auth_label_end = '</Authorisation_Token>'
+                auth_label = "<Authorisation_Token>"
+                auth_label_end = "</Authorisation_Token>"
 
-                model_label = '<STT_Model>'
-                model_label_end = '</STT_Model>'
+                model_label = "<STT_Model>"
+                model_label_end = "</STT_Model>"
 
-                model_precision_label = '<STT_Model_Precision>'
-                model_precision_label_end = '</STT_Model_Precision>'
+                model_precision_label = "<STT_Model_Precision>"
+                model_precision_label_end = "</STT_Model_Precision>"
 
-
-                if not jwt_checked and (time.monotonic() - connection_initiation) >= AUTH_CHECKUP_TIME:
-                    websocket.respond(403, '<Invalid_Message/>')
+                if (
+                    not jwt_checked
+                    and (time.monotonic() - connection_initiation) >= AUTH_CHECKUP_TIME
+                ):
+                    websocket.respond(403, "<Invalid_Message/>")
                     websocket.close()
                     return
 
-
                 if not jwt_checked and isinstance(message, str):
                     if auth_label in message and auth_label_end in message:
-                        jwt_token = ''
+                        jwt_token = ""
                         token_begin = message.index(auth_label) + len(auth_label)
-                        token_end =  message.index(auth_label_end)
+                        token_end = message.index(auth_label_end)
 
                         for i in range(token_begin, token_end):
                             jwt_token += message[i]
 
-                        # Mock validation
                         jwt_validation_result = auth.validate_id_token(jwt_token)
 
                         if jwt_validation_result[0]:
-                            await websocket.send(message='<JWT_Valid/>', text=True)
+                            await websocket.send(message="<JWT_Valid/>", text=True)
                             jwt_checked = True
                         else:
-                            await websocket.send(message='<JWT_Invalid/>', text=True)
+                            await websocket.send(message="<JWT_Invalid/>", text=True)
                             await websocket.close()
 
                 elif not stt_ai_model_paramaters_extracted and isinstance(message, str):
                     if model_label in message and model_label_end in message:
                         stt_model_begin = message.index(model_label) + len(model_label)
-                        stt_model_end =  message.index(model_label_end)
+                        stt_model_end = message.index(model_label_end)
 
                         for i in range(stt_model_begin, stt_model_end):
                             stt_model += message[i]
 
-                        model_precision_begin = message.index(model_precision_label) + len(model_precision_label)
-                        model_precision_end =  message.index(model_precision_label_end)
+                        model_precision_begin = message.index(
+                            model_precision_label
+                        ) + len(model_precision_label)
+                        model_precision_end = message.index(model_precision_label_end)
 
                         for i in range(model_precision_begin, model_precision_end):
                             model_precision += message[i]
@@ -199,87 +226,118 @@ async def echo(websocket:ServerConnection):
                         if (
                             stt_model in model_options["stt_models"]
                             and model_precision in model_options["model_precisions"]
-                            and model_precision in model_options["stt_models"][stt_model]
+                            and model_precision
+                            in model_options["stt_models"][stt_model]
                         ):
                             if model is None:
-                                model = model_options["stt_models"][stt_model][model_precision]
-                                model.start_asr_session(audio_queue=audio_queue, asr_queue=asr_queue, recognition_result=recognition_result, thread_flag=ASR_FLAG)
+                                model = model_options["stt_models"][stt_model][
+                                    model_precision
+                                ]
+                                model.start_asr_session(
+                                    audio_queue=audio_queue,
+                                    asr_queue=asr_queue,
+                                    recognition_result=recognition_result,
+                                    thread_flag=ASR_FLAG,
+                                )
 
-                                await websocket.send(message='<Valid_Model_Parameters/>', text=True)
+                                await websocket.send(
+                                    message="<Valid_Model_Parameters/>", text=True
+                                )
                                 stt_ai_model_paramaters_extracted = True
                             else:
-                                await websocket.send(message='<Invalid_Model_Parameters/>', text=True)
+                                await websocket.send(
+                                    message="<Invalid_Model_Parameters/>", text=True
+                                )
                                 await websocket.close()
 
                 else:
-                    if isinstance(message, bytes) and isinstance(model, SpeechToTextInterface):
-                        model.add_audio_chunk(audio_chunk=message, audio_queue=audio_queue)
+                    if isinstance(message, bytes) and isinstance(
+                        model, SpeechToTextInterface
+                    ):
+                        model.add_audio_chunk(
+                            audio_chunk=message, audio_queue=audio_queue
+                        )
                         recognition_result.result = recognition_result.result.strip()
-                        if recognition_result.result != '':
-                            await websocket.send(message=recognition_result.result, text=True)
-                        recognition_result.result = ''
+                        if recognition_result.result != "":
+                            await websocket.send(
+                                message=recognition_result.result, text=True
+                            )
+                        recognition_result.result = ""
                     else:
                         pass
 
             except ValueError as ve:
-                print(f'--> [ Error: {ve} ]')
-                
+                print(f"--> [ Error: {ve} ]")
+
     except Exception as e:  # noqa: BLE001, F841, S110
         print(e)
         pass
-    
+
     finally:
         ASR_FLAG.set()
 
+
 async def main():
     try:
-        
-        print('--> [ Loading server configuration ]')
+        print("--> [ Loading server configuration ]")
         global loaded_config
         loaded_config = initiate_config()
-        
-        print('--> [ Loading server certificates ]')
+
+        print("--> [ Loading server certificates ]")
         await cert_management()
-        
-        print('--> [ Initiating the Firebase Admin SDK app ]')
-        
-        await auth.initiate_app(loaded_config['firebase']['firebase_key_name'])
-        
-        print('--> [ Firebase Admin SDK app initiated ]')
-        
-        IP = loaded_config['general']['address']
-        PORT = loaded_config['general']['port_number']
-        
-        if loaded_config['security']['use_encryption']:
+
+        print("--> [ Initiating the Firebase Admin SDK app ]")
+
+        await auth.initiate_app(loaded_config["firebase"]["firebase_key_name"])
+
+        print("--> [ Firebase Admin SDK app initiated ]")
+
+        IP = loaded_config["general"]["address"]
+        PORT = loaded_config["general"]["port_number"]
+
+        if loaded_config["security"]["use_encryption"]:
             crypto = RSA_Crypto()
-            private_cert_path = Path(Path.cwd(), 'data', loaded_config['security']['server_cert'])
-            private_key_path = Path(Path.cwd(), 'data', loaded_config['security']['private_key'])
+            private_cert_path = Path(
+                Path.cwd(), "data", loaded_config["security"]["server_cert"]
+            )
+            private_key_path = Path(
+                Path.cwd(), "data", loaded_config["security"]["private_key"]
+            )
             ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            
+
             try:
-                ssl_context.load_cert_chain(certfile=private_cert_path, keyfile=private_key_path)
+                ssl_context.load_cert_chain(
+                    certfile=private_cert_path, keyfile=private_key_path
+                )
             except Exception as e:  # noqa: BLE001
-                print(f'--> [ Error: {e}]', '--> [ Extracting the private key password . . . ]')
-                ssl_context.load_cert_chain(certfile=private_cert_path, keyfile=private_key_path, password= await crypto.get_private_key_password())
-            
-            print('\n\n--> [ Server initiated - (encrypted) ]')
-            print(f'--> [ Server listening on IP: {IP}, PORT: {PORT} ]')
-            
+                print(
+                    f"--> [ Error: {e}]",
+                    "--> [ Extracting the private key password . . . ]",
+                )
+                ssl_context.load_cert_chain(
+                    certfile=private_cert_path,
+                    keyfile=private_key_path,
+                    password=await crypto.get_private_key_password(),
+                )
+
+            print("\n\n--> [ Server initiated - (encrypted) ]")
+            print(f"--> [ Server listening on IP: {IP}, PORT: {PORT} ]")
+
             server = await serve(echo, IP, PORT, ssl=ssl_context)
             await server.serve_forever()
         else:
-            print('\n\n--> [ Server initiated - (unencrypted) ]')
-            print(f'--> [ Server listening on IP: {IP}, PORT: {PORT} ]')
-            
+            print("\n\n--> [ Server initiated - (unencrypted) ]")
+            print(f"--> [ Server listening on IP: {IP}, PORT: {PORT} ]")
+
             server = await serve(echo, IP, PORT)
             await server.serve_forever()
-        
-        
+
     except Exception as e:
-        print(f'--> [Error: {e}]')
+        print(f"--> [Error: {e}]")
         raise
     finally:
         pass
+
 
 if __name__ == "__main__":
     try:

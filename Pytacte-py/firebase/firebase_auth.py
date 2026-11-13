@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import firebase_admin
@@ -14,17 +15,39 @@ class FirebaseAuth:
         self.firebase_app:App | None = None
         
     async def initiate_app(self, key_name:str | None):
+        
+        # Extract the Firebse Admin SDK value from the database
         result:ReturnValue = await self.secrets_manager.getSecret('admin_sdk_key')
+        
+        # If the key secret was extracted successfully
         if result.successful:
-            self.__initialise_app__(json.loads(result.payload))
+            # Initialise the app with the extracted secret's key value
+            await self.__initialise_app__(json.loads(result.payload))
         else:
+            # Get the path of the key file
             key_path = Path(Path.cwd(), 'data', key_name)
-
+            
+            # If the path is valid
             if key_path.exists():
+                # Asynchronously open the key file for reading 
                 async with async_open(key_path, 'r') as fr:
+                    
+                    # Asynchronously read the file's content as text
                     key = await fr.read()
+                    
+                # Create a secret value or update the existing secret value with the current key value 
                 await self.secrets_manager.setSecret('admin_sdk_key', key)
+                
+                # Initialise the app with the file's key value content
                 await self.__initialise_app__(json.loads(key))
+                
+                # Delete the key file from the OS as it is stored in Google Secrets.
+                # This is done to minimise the surface area for attacks and prevent
+                # unauthorised access with admin privileges at the app's Firebase
+                # services 
+                os.remove(str(key_path))
+                
+                
             else:
                 raise RuntimeError(
                     "--> [ Error: Generate a Firebase private key, save it in 'data', "

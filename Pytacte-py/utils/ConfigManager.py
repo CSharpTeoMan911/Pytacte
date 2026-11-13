@@ -20,14 +20,19 @@ class Config:
         generate_self_signed: bool = False,
         server_cert: str = "server_cert.pem",
         private_key: str = "private_key.pem",
-        socket_backlog: int = 100,
         max_transcription_jobs_per_user: int = 10,
+        reverse_proxy:bool = False,
+        load_balancer:bool = False,
+        is_load_balancer_processing_node:bool = False,
+        audio_stream_byte_rate_per_second:int = 80000
     ):
         self.config = {
             "general": {
                 "address": address,
                 "port_number": port_number,
-                "socket_backlog": socket_backlog,
+                "load_balancer": load_balancer,
+                "is_load_balancer_processing_node":is_load_balancer_processing_node,
+                "audio_stream_byte_rate_per_second":audio_stream_byte_rate_per_second
             },
             "security": {
                 "use_encryption": use_encryption,
@@ -35,6 +40,7 @@ class Config:
                 "generate_self_signed": generate_self_signed,
                 "server_cert": server_cert,
                 "private_key": private_key,
+                "reverse_proxy": reverse_proxy
             },
             "transcription": {
                 "max_transcription_jobs_per_user": max_transcription_jobs_per_user,
