@@ -32,7 +32,7 @@ class SpeechToTextInterface:
 
     """
     stt_models = ['Nemo CTC Critinet 512', 'Nemo CTC Conformer Large', 'Nemo Parakeet TDT-CTC 110M']
-    model_precisons = ['Quantised 8', 'Full-Precision 16']
+    model_precisons = ['Quantised 8', 'Floating-Point 32']
     """
     model: sherpa_onnx.OfflineRecognizer | None = None
 
@@ -45,7 +45,7 @@ class SpeechToTextInterface:
                 "sherpa-onnx-nemo-ctc-en-citrinet-512",
             ),
             "precision": {
-                "Full-Precision 32": Path(
+                "Floating-Point 32": Path(
                     Path.cwd(),
                     "data",
                     "models",
@@ -69,7 +69,7 @@ class SpeechToTextInterface:
                 "sherpa-onnx-nemo-ctc-en-conformer-large",
             ),
             "precision": {
-                "Full-Precision 32": Path(
+                "Floating-Point 32": Path(
                     Path.cwd(),
                     "data",
                     "models",

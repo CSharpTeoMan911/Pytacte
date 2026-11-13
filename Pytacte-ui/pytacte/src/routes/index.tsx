@@ -168,6 +168,7 @@ function Home() {
     if (webSocketStreaming) {
       webSocketStreaming.onmessage = (event: MessageEvent) => {
         const [isStatus, payload] = event.data;
+        console.log(payload)
         if (isStatus) {
 
 
@@ -460,7 +461,7 @@ function Home() {
                   <Typography sx={{ marginLeft: '10px', color: '#003b5f', fontFamily: 'Roboto Mono, monospace', marginBottom: '10px' }} variant='h6'>
                     // Select model precision
                   </Typography>
-                  <CustomSelectionField label='Model Precision' minWidth='40%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={currentModel === 'Nemo Parakeet TDT-CTC 110M' ? ['Quantised 8'] : ['Quantised 8', 'Full-Precision 32']} enabled={precisionSelectionEnabled} onChange={setCurrentPrecision} />
+                  <CustomSelectionField label='Model Precision' minWidth='40%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={currentModel === 'Nemo Parakeet TDT-CTC 110M' ? ['Quantised 8'] : ['Quantised 8', 'Floating-Point 32']} enabled={precisionSelectionEnabled} onChange={setCurrentPrecision} />
                 </div>
                 <Divider sx={{
                   margin: '20px 0px 20px 0px',

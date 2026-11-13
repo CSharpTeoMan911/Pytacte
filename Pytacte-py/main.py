@@ -28,9 +28,9 @@ loaded_config: object = {}
 model_options = {
     "stt_models": {
         "Nemo CTC Critinet 512": {
-            "Full-Precision 32": SpeechToTextInterface(
+            "Floating-Point 32": SpeechToTextInterface(
                 model_name="Nemo CTC Critinet 512",
-                model_precision="Full-Precision 32",
+                model_precision="Floating-Point 32",
             ),
             "Quantised 8": SpeechToTextInterface(
                 model_name="Nemo CTC Critinet 512",
@@ -38,9 +38,9 @@ model_options = {
             ),
         },
         "Nemo CTC Conformer Large": {
-            "Full-Precision 32": SpeechToTextInterface(
+            "Floating-Point 32": SpeechToTextInterface(
                 model_name="Nemo CTC Conformer Large",
-                model_precision="Full-Precision 32",
+                model_precision="Floating-Point 32",
             ),
             "Quantised 8": SpeechToTextInterface(
                 model_name="Nemo CTC Conformer Large",
@@ -54,7 +54,7 @@ model_options = {
             ),
         },
     },
-    "model_precisions": ["Quantised 8", "Full-Precision 32"],
+    "model_precisions": ["Quantised 8", "Floating-Point 32"],
 }
 
 """
@@ -139,16 +139,20 @@ async def cert_management():
 
 
 async def echo(websocket: ServerConnection):
-    client_ip = websocket.remote_address[0]
-
-    """
-    forwarded_for = websocket.request.headers.get("X-Forwarded-For")
-client_ip = (
-    forwarded_for.split(",")[0].strip()
-    if forwarded_for
-    else websocket.remote_address[0]
-)
-    """
+    client_ip:str | None 
+    
+    if not loaded_config['security']['reverse_proxy']:
+        client_ip = websocket.remote_address[0]
+    else:
+        forwarded_for = websocket.request.headers.get("X-Forwarded-For")
+        client_ip = (
+            forwarded_for.split(",")[0].strip()
+            if forwarded_for
+            else websocket.remote_address[0]
+        )
+        
+    if client_ip == None or client_ip == '':
+        raise RuntimeError('Invalid client ip address')
 
     if not ip_rate_limiter.is_allowed(client_ip):
         await websocket.close(code=1013, reason="Rate limit exceeded")
@@ -249,6 +253,12 @@ client_ip = (
                                     message="<Invalid_Model_Parameters/>", text=True
                                 )
                                 await websocket.close()
+                                
+                        else:
+                            await websocket.send(
+                                message="<Invalid_Model_Parameters/>", text=True
+                            )
+                            await websocket.close()
 
                 else:
                     if isinstance(message, bytes) and isinstance(
@@ -295,7 +305,7 @@ async def main():
         IP = loaded_config["general"]["address"]
         PORT = loaded_config["general"]["port_number"]
 
-        if loaded_config["security"]["use_encryption"]:
+        if loaded_config["security"]["use_encryption"] and not loaded_config['security']['reverse_proxy']:
             crypto = RSA_Crypto()
             private_cert_path = Path(
                 Path.cwd(), "data", loaded_config["security"]["server_cert"]
