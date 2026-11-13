@@ -8,3 +8,4 @@ __pycache__
 *.pem
 server_config.json
 */models/*
+pytacte-firebase-adminsdk*.json

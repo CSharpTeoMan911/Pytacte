@@ -40,7 +40,7 @@ class Config:
                 "max_transcription_jobs_per_user": max_transcription_jobs_per_user,
             },
             "firebase": {
-                "firebase_key_file_path":'USE_KEY_PATH'
+                "firebase_key_name":'KEY_NAME'
             },
         }
 

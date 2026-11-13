@@ -8,6 +8,7 @@ from pathlib import Path
 
 from websockets.asyncio.server import ServerConnection, serve
 
+from firebase.firebase_auth import FirebaseAuth
 from server.transcription_service import SpeechToTextInterface, TrasncriptionResult
 from utils.ConfigManager import Config
 from utils.Crytography import RSA_Crypto
@@ -16,6 +17,8 @@ AUTH_CHECKUP_TIME:float = 5 # 5 seconds timeout
 FILE_NAME = 'server_config.json'
 
 config = Config(use_encryption=True)
+
+auth = FirebaseAuth()
 
 loaded_config:object = {}
 
@@ -170,9 +173,9 @@ async def echo(websocket:ServerConnection):
                             jwt_token += message[i]
 
                         # Mock validation
-                        jwt_valid = True # Mock value
+                        jwt_validation_result = auth.validate_id_token(jwt_token)
 
-                        if jwt_valid:
+                        if jwt_validation_result[0]:
                             await websocket.send(message='<JWT_Valid/>', text=True)
                             jwt_checked = True
                         else:
@@ -230,12 +233,19 @@ async def echo(websocket:ServerConnection):
 
 async def main():
     try:
+        
         print('--> [ Loading server configuration ]')
         global loaded_config
         loaded_config = initiate_config()
         
         print('--> [ Loading server certificates ]')
         await cert_management()
+        
+        print('--> [ Initiating the Firebase Admin SDK app ]')
+        
+        await auth.initiate_app(loaded_config['firebase']['firebase_key_name'])
+        
+        print('--> [ Firebase Admin SDK app initiated ]')
         
         IP = loaded_config['general']['address']
         PORT = loaded_config['general']['port_number']
@@ -270,7 +280,6 @@ async def main():
         raise
     finally:
         pass
-        #on_shutdown()
 
 if __name__ == "__main__":
     try:
