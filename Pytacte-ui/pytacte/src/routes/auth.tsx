@@ -89,7 +89,7 @@ function Login() {
 
 
     return (
-        <RootPanel background_color="#d9d9da">
+        <RootPanel background_color="#778694">
             {notificationOpen && (
                 <NotificationSystem
                     notificationText={notificationText}

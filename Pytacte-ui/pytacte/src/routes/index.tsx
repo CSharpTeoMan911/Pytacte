@@ -67,13 +67,34 @@ function Home() {
   const targetInitMarker = '>>>';
   const targetInitLabel = ' init pytacte';
 
-  const [expandTranscriptionPanel, setExpandTranscriptionPanel] = useState(false);
+  const [expandTranscriptionPanel, setExpandTranscriptionPanel] = useState<boolean>(false);
+  const [expandedTranscriptionPanelTopAndLeft, setExpandedTranscriptionPanelTopAndLeft] = useState<string | undefined>('15%');
+  const expandedTranscriptionPanelTopAndLeftRef = useRef<number>(15);
+  const transcriptionExpansionAnimationInterval = useRef<NodeJS.Timeout | undefined>(undefined);
 
-  const [initLabel, setInitLabel] = useState<string>(targetInitMarker);
+  useEffect(() => {
+    if (!expandTranscriptionPanel) {
+      setExpandedTranscriptionPanelTopAndLeft('15%');
+      expandedTranscriptionPanelTopAndLeftRef.current = 15;
+      clearInterval(transcriptionExpansionAnimationInterval.current);
+    }
+    else {
+      transcriptionExpansionAnimationInterval.current = setInterval(initTranscriptionPanelExpansionAnimation, 1);
+    }
+  }, [expandTranscriptionPanel]);
+
   const [hydrated, setHydrated] = useState<boolean>(false);
-  let markerAnimationInterval: NodeJS.Timeout | undefined;
-  let initLabelValue: string = targetInitMarker;
-  let markerIndex: number = 0;
+
+  const flickerAnimationInterval = useRef<NodeJS.Timeout | undefined>(undefined);
+  const flickerPercent = useRef<number>(90);
+  const switchFlickerOffset = useRef<boolean>(false);
+  const [linearGradient, setLinearGradient] = useState<string>('linear-gradient(0deg, #2b4a6d 10%, #6d95c4 90%, #2b4a6d 100%)');
+
+
+  const initLabelValue = useRef<string>(targetInitMarker);
+  const markerIndex = useRef<number>(0);
+  const [initLabel, setInitLabel] = useState<string>(targetInitMarker);
+  const markerAnimationInterval = useRef<NodeJS.Timeout | undefined>(undefined);
 
   const [webSocketStreaming, setWebSocketStreaming] = useState<Worker | undefined>(undefined);
   const webSocketStreamingRef = useRef<Worker | undefined>(undefined);
@@ -119,17 +140,50 @@ function Home() {
     }
   }
 
+  function initTranscriptionPanelExpansionAnimation() {
+    console.log(expandedTranscriptionPanelTopAndLeftRef.current)
+    if (expandedTranscriptionPanelTopAndLeftRef.current > 0) {
+      -- expandedTranscriptionPanelTopAndLeftRef.current;
+      setExpandedTranscriptionPanelTopAndLeft(`${expandedTranscriptionPanelTopAndLeftRef.current}%`);
+    }
+    else{
+      clearInterval(transcriptionExpansionAnimationInterval.current);
+      transcriptionExpansionAnimationInterval.current = undefined;
+    }
+  }
+
+
+  function initFlickerAnimation() {
+    if (!switchFlickerOffset.current) {
+      if (flickerPercent.current < 30) {
+        switchFlickerOffset.current = true;
+      }
+      else {
+        flickerPercent.current = flickerPercent.current - 1;
+      }
+    }
+    else {
+      if (flickerPercent.current > 90) {
+        switchFlickerOffset.current = false;
+      }
+      else {
+        flickerPercent.current = flickerPercent.current + 1;
+      }
+    }
+
+
+    setLinearGradient(`linear-gradient(0deg, #2b4a6d 10%, #9da4ac ${flickerPercent.current}%, #2b4a6d 100%)`);
+  }
 
 
   function initAnimation() {
-
-    if (markerIndex < targetInitLabel.length) {
-      initLabelValue += targetInitLabel[markerIndex];
-      setInitLabel(initLabelValue);
-      markerIndex++;
+    if (markerIndex.current < targetInitLabel.length) {
+      initLabelValue.current += targetInitLabel[markerIndex.current];
+      setInitLabel(initLabelValue.current);
+      markerIndex.current++;
     }
     else {
-      clearInterval(markerAnimationInterval);
+      clearInterval(markerAnimationInterval.current);
     }
   }
 
@@ -150,12 +204,6 @@ function Home() {
     getIfUserLoggedIn().then((isUserLoggedIn) => {
       if (isUserLoggedIn) {
         setAuthReady(true);
-
-        if (!hydrated) {
-          markerAnimationInterval ?? clearInterval(markerAnimationInterval);
-          markerAnimationInterval = setInterval(initAnimation, 100);
-          setHydrated(true);
-        }
       } else {
         window.location.href = '/auth'
       }
@@ -163,12 +211,24 @@ function Home() {
   }, []);
 
 
+  useEffect(() => {
+    if (!hydrated) {
+      markerAnimationInterval.current ?? clearInterval(markerAnimationInterval.current);
+      markerAnimationInterval.current = setInterval(initAnimation, 100);
+
+      flickerAnimationInterval.current ?? clearInterval(flickerAnimationInterval.current);
+      flickerAnimationInterval.current = setInterval(initFlickerAnimation, 50);
+
+      setHydrated(true);
+    }
+  }, [hydrated])
+
+
 
   useEffect(() => {
     if (webSocketStreaming) {
       webSocketStreaming.onmessage = (event: MessageEvent) => {
         const [isStatus, payload] = event.data;
-        console.log(payload)
         if (isStatus) {
 
 
@@ -381,7 +441,7 @@ function Home() {
             pdf.text(line, margin, y);
             y += lineHeight;
           }
-          
+
           pdf.save('pyctate-transcription.pdf');
           setSaveDocument(false);
         });
@@ -412,7 +472,7 @@ function Home() {
   if (!authReady) return null
 
   return (
-    <RootPanel style={{ backgroundColor: '#2b4a6d', display: 'flex', flexDirection: 'column' }}>
+    <RootPanel style={{ background: linearGradient, display: 'flex', flexDirection: 'column' }}>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=Micro+5&family=Tiny5+Duo:ital,wght@0,100..900;1,100..900&display=swap');
@@ -502,7 +562,7 @@ function Home() {
             </div>
 
             <div style={{ display: 'block', width: '100%', height: modelPanelHeight ? `${modelPanelHeight}px` : 'fit-content' }}>
-              <CustomPaper position={expandTranscriptionPanel ? 'absolute' : 'relative'} top={expandTranscriptionPanel ? '0' : 'default'} left={expandTranscriptionPanel ? '0' : 'default'} zIndex={expandTranscriptionPanel ? 100 : 0} background_color='#f8f8f8' boxShadow='1px 0px 10px #54b9f3' width={expandTranscriptionPanel ? '100vw' : '100%'} height={expandTranscriptionPanel ? '100vh' : '100%'} padding='6px'>
+              <CustomPaper position={expandTranscriptionPanel ? 'absolute' : 'relative'} top={expandTranscriptionPanel ? expandedTranscriptionPanelTopAndLeft : 'default'} left={expandTranscriptionPanel ? expandedTranscriptionPanelTopAndLeft : 'default'} zIndex={expandTranscriptionPanel ? 1 : 0} background_color='#f8f8f8' boxShadow='1px 0px 10px #54b9f3' width={expandTranscriptionPanel ? '100vw' : '100%'} height={expandTranscriptionPanel ? '100vh' : '100%'} padding='6px'>
                 <div style={{ display: 'flex', borderRadius: '3px', textAlign: 'start', backgroundColor: '#f8f8f8', flexDirection: 'column', boxSizing: 'border-box', width: '100%', height: '100%', minWidth: 0, minHeight: 0 }}>
                   <div style={{ display: 'grid', backgroundColor: '#f8f8f8', gridTemplateColumns: '1.8fr 0.2fr', width: '100%', justifyContent: 'center', height: '40px' }}>
                     <div style={{ display: 'gird', gridTemplateColumns: '1fr 1fr', width: '100%', height: '100%', borderRadius: '10px' }} >

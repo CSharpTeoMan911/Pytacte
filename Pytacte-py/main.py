@@ -57,18 +57,6 @@ model_options = {
     "model_precisions": ["Quantised 8", "Floating-Point 32"],
 }
 
-"""
-def on_shutdown():
-    for interface in (
-        granite_speech_fp16,
-        granite_speech_q8,
-        moonshine_speech_fp16,
-        moonshine_speech_q8,
-        parakeet_speech_fp16,
-        parakeet_speech_q8,
-    ):
-        interface.dispose()
-"""
 
 
 def initiate_config() -> object:
@@ -190,7 +178,7 @@ async def echo(websocket: ServerConnection):
                     and (time.monotonic() - connection_initiation) >= AUTH_CHECKUP_TIME
                 ):
                     websocket.respond(403, "<Invalid_Message/>")
-                    websocket.close()
+                    await websocket.close()
                     return
 
                 if not jwt_checked and isinstance(message, str):
