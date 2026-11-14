@@ -11,7 +11,7 @@ import Container from '@mui/material/Container';
 import Button from '@mui/material/Button';
 import MenuItem from '@mui/material/MenuItem';
 import LogoComponent from './LogoComponent';
-import { getIfUserLoggedIn } from '../firebase/firebase_auth';
+import { getIfUserLoggedIn, logoutAccount } from '../firebase/firebase_auth';
 
 type RouteInfo = [path: string, label: string];
 
@@ -29,6 +29,7 @@ type Porps = {
 export default function CustomAppBar({ appBarTextColor, appBarSecondaryTextColor, appBarColor, logoWidth, logoHeight, routesInfo, zIndex }: Porps) {
 
   const [pages, setPages] = useState<RouteInfo[]>(routesInfo ?? [['/', 'Home']]);
+  //const []
 
   const [loggedIn, setLoggedIn] = useState<boolean>(false);
 
@@ -39,6 +40,7 @@ export default function CustomAppBar({ appBarTextColor, appBarSecondaryTextColor
     async function checkAuthStatus() {
       console.log('Checking auth status...');
       if (pages.find(([, label]) => label === '[auth]')) {
+
         const isLoggedIn = await getIfUserLoggedIn();
         if (!isMounted) return;
 
@@ -74,17 +76,16 @@ export default function CustomAppBar({ appBarTextColor, appBarSecondaryTextColor
     setAnchorElUser(null);
   };
 
-  const handleButtonClick = ([path, label]: RouteInfo) => {
-    // Handle button click logic here
-    switch (label) {
-      case 'Login':
-      case 'Logout':
-        window.location.href = path;
-        break;
-      default:
-        window.location.href = path;
-        break;
+  const handleButtonClick = async ([path, label]: RouteInfo) => {
+    if (label === 'Logout') {
+      const [success, message] = await logoutAccount();
+      if (!success) {
+        console.error('Logout failed:', message);
+        return;
+      }
     }
+
+    window.location.href = path;
   };
 
   return (
