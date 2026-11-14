@@ -82,15 +82,15 @@ class FirebaseAuth:
 
             return [True, result]
         except auth.InvalidIdTokenError:
-            return [False, 'Invalid token.']
+            return [False, 'Invalid token']
         except auth.ExpiredIdTokenError:
             return [False, 'Expired token']
         except auth.RevokedIdTokenError:
             return [False, 'Token revoked']
         except auth.UserDisabledError:
-            return [False, 'Internal server error']
+            return [False, 'User disabled']
         except auth.CertificateFetchError:
-            return [False, 'Internal server error']
+            return [False, 'Certificate error']
 
 
     def __remove_id_token__(self, uid:str) -> bool:

@@ -1,5 +1,5 @@
 import { app } from './firebase_app'
-import { getAuth, browserLocalPersistence, createUserWithEmailAndPassword, sendEmailVerification, applyActionCode, signInWithEmailAndPassword, validatePassword, signOut, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { getAuth, browserLocalPersistence, createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword, validatePassword, signOut, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 
 
 type compositeResult = [boolean, string]
@@ -140,7 +140,7 @@ export async function getIfUserLoggedIn(): Promise<boolean> {
 export async function getJwtToken():Promise<compositeResult>  {
     try
     {
-        const token:string | undefined = await auth?.currentUser?.getIdToken(true);
+        const token:string | undefined = await auth?.currentUser?.getIdToken(false);
 
         if(token)
             return [true, token];

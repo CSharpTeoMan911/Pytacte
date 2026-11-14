@@ -58,7 +58,6 @@ model_options = {
 }
 
 
-
 def initiate_config() -> object:
     try:
         result = config.read_config_file(FILE_NAME)
@@ -127,9 +126,9 @@ async def cert_management():
 
 
 async def echo(websocket: ServerConnection):
-    client_ip:str | None 
-    
-    if not loaded_config['security']['reverse_proxy']:
+    client_ip: str | None
+
+    if not loaded_config["security"]["reverse_proxy"]:
         client_ip = websocket.remote_address[0]
     else:
         forwarded_for = websocket.request.headers.get("X-Forwarded-For")
@@ -138,9 +137,9 @@ async def echo(websocket: ServerConnection):
             if forwarded_for
             else websocket.remote_address[0]
         )
-        
-    if client_ip == None or client_ip == '':
-        raise RuntimeError('Invalid client ip address')
+
+    if client_ip == None or client_ip == "":
+        raise RuntimeError("Invalid client ip address")
 
     if not ip_rate_limiter.is_allowed(client_ip):
         await websocket.close(code=1013, reason="Rate limit exceeded")
@@ -190,14 +189,37 @@ async def echo(websocket: ServerConnection):
                         for i in range(token_begin, token_end):
                             jwt_token += message[i]
 
-                        jwt_validation_result = auth.validate_id_token(jwt_token)
+                        jwt_valid, jwt_validation_message = auth.validate_id_token(
+                            jwt_token
+                        )
 
-                        if jwt_validation_result[0]:
+                        if not jwt_valid:
+                            match jwt_validation_message:
+                                case "Invalid token":
+                                    await websocket.send(
+                                        message="<JWT_Invalid/>", text=True
+                                    )
+                                case "Expired token":
+                                    await websocket.send(
+                                        message="<JWT_Token_Expired/>", text=True
+                                    )
+                                case "Token revoked":
+                                    await websocket.send(
+                                        message="<JWT_Token_Revoked/>", text=True
+                                    )
+                                case "User disabled":
+                                    await websocket.send(
+                                        message="<Invalid_Account/>", text=True
+                                    )
+                                case "Certificate error":
+                                    await websocket.send(
+                                        message="<Internal_Server_Error/>", text=True
+                                    )
+
+
+                        else:
                             await websocket.send(message="<JWT_Valid/>", text=True)
                             jwt_checked = True
-                        else:
-                            await websocket.send(message="<JWT_Invalid/>", text=True)
-                            await websocket.close()
 
                 elif not stt_ai_model_paramaters_extracted and isinstance(message, str):
                     if model_label in message and model_label_end in message:
@@ -241,7 +263,7 @@ async def echo(websocket: ServerConnection):
                                     message="<Invalid_Model_Parameters/>", text=True
                                 )
                                 await websocket.close()
-                                
+
                         else:
                             await websocket.send(
                                 message="<Invalid_Model_Parameters/>", text=True
@@ -293,7 +315,10 @@ async def main():
         IP = loaded_config["general"]["address"]
         PORT = loaded_config["general"]["port_number"]
 
-        if loaded_config["security"]["use_encryption"] and not loaded_config['security']['reverse_proxy']:
+        if (
+            loaded_config["security"]["use_encryption"]
+            and not loaded_config["security"]["reverse_proxy"]
+        ):
             crypto = RSA_Crypto()
             private_cert_path = Path(
                 Path.cwd(), "data", loaded_config["security"]["server_cert"]

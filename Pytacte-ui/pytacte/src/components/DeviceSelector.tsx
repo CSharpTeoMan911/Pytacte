@@ -22,8 +22,6 @@ export default function DeviceSelector({ desktopChildren, mobileChildren }: Prop
 
     const isProbablyMobile = deviceSignals.anyCoarsePointer || deviceSignals.coarsePointer || deviceSignals.noHover || deviceSignals.noAnyHover;
 
-    console.debug('DeviceSelector: isMobile:', isMobile, 'isProbablyMobile:', isProbablyMobile);
-    console.log('DeviceSelector: isMobile:', isMobile, 'isProbablyMobile:', isProbablyMobile);
 
     if (isMobile && isProbablyMobile) {
         return (

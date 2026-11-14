@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, createElement } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { getIfUserLoggedIn } from '../firebase/firebase_auth'
+import { getIfUserLoggedIn, logoutAccount } from '../firebase/firebase_auth'
 import RootPanel from '#/components/RootPanel'
 import CustomAppBar from '#/components/CustomAppBar'
 import DeviceSelector from '#/components/DeviceSelector'
@@ -22,6 +22,7 @@ import { StartLiveAudioCapture, StopAudioCapture } from '../utils/LiveAudioCaptu
 import { getJwtToken } from '../firebase/firebase_auth'
 import { jsPDF } from "jspdf";
 import '../../fonts/Tiny5-Duo-normal.js';
+import NotificationSystem from "../components/NotificationSystem.js"
 
 
 const transcriptionEditorTheme = EditorView.theme({
@@ -125,6 +126,9 @@ function Home() {
   const [precisionSelectionEnabled, setPrecisionSelectionEnabled] = useState(true);
 
 
+  const [notificationText, setNotificationText] = useState('');
+  const [notificationType, setNotificationType] = useState<'success' | 'error' | 'warning' | 'info'>('info');
+  const [notificationOpen, setNotificationOpen] = useState(false);
 
 
   const transcription = useRef<string>('');
@@ -133,6 +137,17 @@ function Home() {
   const [saveDocument, setSaveDocument] = useState<boolean>();
   const [clearTranscription, setClearTranscription] = useState<boolean>();
 
+
+  async function notificationCloseCallback() {
+    if (notificationType === 'error' && 
+      (notificationText === 'Invalid log in session.' || 
+       notificationText === 'Log in session expired.' || 
+       notificationText === 'Log in session revoked.')) {
+
+        logoutAccount();
+        window.location.href = '/auth';
+    }
+  }
 
   function StreamAudioToServer(bytes: ArrayBuffer) {
     if (jwtValidated.current && modelParamatersValidated.current) {
@@ -143,10 +158,10 @@ function Home() {
   function initTranscriptionPanelExpansionAnimation() {
     console.log(expandedTranscriptionPanelTopAndLeftRef.current)
     if (expandedTranscriptionPanelTopAndLeftRef.current > 0) {
-      -- expandedTranscriptionPanelTopAndLeftRef.current;
+      --expandedTranscriptionPanelTopAndLeftRef.current;
       setExpandedTranscriptionPanelTopAndLeft(`${expandedTranscriptionPanelTopAndLeftRef.current}%`);
     }
-    else{
+    else {
       clearInterval(transcriptionExpansionAnimationInterval.current);
       transcriptionExpansionAnimationInterval.current = undefined;
     }
@@ -172,7 +187,7 @@ function Home() {
     }
 
 
-    setLinearGradient(`linear-gradient(0deg, #2b4a6d 10%, #9da4ac ${flickerPercent.current}%, #2b4a6d 100%)`);
+    setLinearGradient(`linear-gradient(0deg, #2b4a6d 10%, #19232e ${flickerPercent.current}%, #2b4a6d 100%)`);
   }
 
 
@@ -229,6 +244,7 @@ function Home() {
     if (webSocketStreaming) {
       webSocketStreaming.onmessage = (event: MessageEvent) => {
         const [isStatus, payload] = event.data;
+        console.log(payload);
         if (isStatus) {
 
 
@@ -268,8 +284,45 @@ function Home() {
                 modelParamatersValidatationProcedureInitiated.current = true;
               }
             }
-            else if (payload === '<JWT_Invalid/>' || payload === '<Invalid_Message/>') {
+            else {
+              console.log(payload);
+              switch (payload) {
+                case "<JWT_Invalid/>":
+                  setNotificationType('error');
+                  setNotificationText('Invalid log in session.');
+                  setNotificationOpen(true);
+                  break;
 
+                case "<JWT_Token_Expired/>":
+                  setNotificationType('error');
+                  setNotificationText('Log in session expired.');
+                  setNotificationOpen(true);
+                  break;
+
+                case "<JWT_Token_Revoked/>":
+                  setNotificationType('error');
+                  setNotificationText('Log in session revoked.');
+                  setNotificationOpen(true);
+                  break;
+
+                case "<Invalid_Account/>":
+                  setNotificationType('error');
+                  setNotificationText('Invalid user account.');
+                  setNotificationOpen(true);
+                  break;
+
+                case "<Invalid_Message/>":
+                  setNotificationType('error');
+                  setNotificationText('Invalid message format.');
+                  setNotificationOpen(true);
+                  break
+
+                case "<Internal_Server_Error/>":
+                  setNotificationType('error');
+                  setNotificationText('Internal server error.');
+                  setNotificationOpen(true);
+                  break;
+              }
             }
           }
           else {
@@ -279,7 +332,9 @@ function Home() {
                 modelParamatersValidated.current = true;
               }
               else if (payload === '<Invalid_Model_Parameters/>') {
-
+                setNotificationType('error');
+                setNotificationText('Invalid model name or model precision.');
+                setNotificationOpen(true);
               }
             }
             else {
@@ -477,6 +532,16 @@ function Home() {
         @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=Micro+5&family=Tiny5+Duo:ital,wght@0,100..900;1,100..900&display=swap');
       </style>
+
+      {notificationOpen && (
+        <NotificationSystem
+          notificationText={notificationText}
+          notificationType={notificationType}
+          openState={notificationOpen}
+          setOpenState={setNotificationOpen}
+          onCloseCallback={notificationCloseCallback}
+        />
+      )}
       <CustomAppBar
         logoWidth="50px"
         logoHeight="50px"
