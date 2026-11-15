@@ -156,7 +156,6 @@ function Home() {
   }
 
   function initTranscriptionPanelExpansionAnimation() {
-    console.log(expandedTranscriptionPanelTopAndLeftRef.current)
     if (expandedTranscriptionPanelTopAndLeftRef.current > 0) {
       --expandedTranscriptionPanelTopAndLeftRef.current;
       setExpandedTranscriptionPanelTopAndLeft(`${expandedTranscriptionPanelTopAndLeftRef.current}%`);

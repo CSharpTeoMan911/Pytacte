@@ -63,18 +63,8 @@ class FirebaseAuth:
             raise RuntimeError(f'--> [ Error: {e} ]')
         
     def validate_id_token(self, token:str) -> tuple[bool, str]:
-        '''
-        ValueError: If ``id_token`` is a not a string or is empty.
-        InvalidIdTokenError: If ``id_token`` is not a valid Firebase ID token.
-        ExpiredIdTokenError: If the specified ID token has expired.
-        RevokedIdTokenError: If ``check_revoked`` is ``True`` and the ID token has been revoked.
-        CertificateFetchError: If an error occurs while fetching the public key certificates
-            required to verify the ID token.
-        UserDisabledError: If ``check_revoked`` is ``True`` and the corresponding user
-            record is disabled.
-        '''
         try:
-            result = auth.verify_id_token(token)
+            result = auth.verify_id_token(id_token=token, check_revoked=True)
             
             if result['email_verified'] is False:
                 self.__remove_id_token__(result['user_id'])

@@ -1,6 +1,6 @@
 import Box from '@mui/material/Box';
 import type { SxProps, Theme } from '@mui/material/styles';
-import logo from '../images/Pyctate.png';
+import logo from '../data/Pyctate.png';
 
 type Props = {
     logoSrc?: string;

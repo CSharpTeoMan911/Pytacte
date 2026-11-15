@@ -11,7 +11,7 @@ import CustomAppBar from '#/components/CustomAppBar';
 import RootPanel from '#/components/RootPanel';
 import LogoComponent from '#/components/LogoComponent';
 import NotificationSystem from '#/components/NotificationSystem';
-import googleLogo from '../images/google.png';
+import googleLogo from '../data/google.png';
 import { getIfUserLoggedIn, loginAccount, loginWithGoogle, registerAccount } from '../firebase/firebase_auth';
 
 export const Route = createFileRoute('/auth')({ component: Login });

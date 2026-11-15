@@ -1,7 +1,78 @@
 {
-  /* Visit https://firebase.google.com/docs/database/security to learn more about security rules. */
   "rules": {
     ".read": false,
-    ".write": false
+    ".write": false,
+    "Client_Available_Pytacte_Servers": {
+      "$serverAddress": {
+        "server_id": {
+          ".read": false,
+          ".write": false,
+          ".validate": "newData.isString()"
+        },
+        "server_address": {
+          ".read": "auth != null",
+          ".write": false,
+          ".validate": "newData.isString()"
+        },
+        "tls": {
+          ".read": "auth != null",
+          ".write": false,
+          ".validate": "newData.isBoolean()"
+        }
+      }
+    },
+    "ServerAvailability": {
+      "$serverId": {
+        "server_id": {
+          ".read": false,
+          ".write": false,
+          ".validate": "newData.isString()"
+        },
+        "server_address": {
+          ".read": false,
+          ".write": false,
+          ".validate": "newData.isString()"
+        },
+        "tls": {
+          ".read": false,
+          ".write": false,
+          ".validate": "newData.isBoolean()"
+        },
+        "cpu_usage": {
+          ".read": false,
+          ".write": false,
+          ".validate": "newData.isNumber()"
+        },
+        "ram_usage": {
+          ".read": false,
+          ".write": false,
+          ".validate": "newData.isNumber()"
+        },
+        "load_balancer": {
+          ".read": false,
+          ".write": false,
+          ".validate": "newData.isBoolean()"
+        }
+      }
+    },
+    "TranscriptionJobs": {
+      "$transcriptionId": {
+        "transcription_id": {
+          ".read": false,
+          ".write": false,
+          ".validate": "newData.isString()"
+        },
+        "uuid": {
+          ".read": false,
+          ".write": false,
+          ".validate": "newData.isString()"
+        },
+        "server_id": {
+          ".read": false,
+          ".write": false,
+          ".validate": "newData.isString()"
+        }
+      }
+    }
   }
 }
