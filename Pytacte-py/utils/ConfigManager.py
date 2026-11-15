@@ -24,7 +24,9 @@ class Config:
         reverse_proxy:bool = False,
         load_balancer:bool = False,
         is_load_balancer_processing_node:bool = False,
-        audio_stream_byte_rate_per_second:int = 80000
+        audio_stream_byte_rate_per_second:int = 80000,
+        database_url:str = "REPLACE_WITH_FIREBASE_YOUR_DATABASE_URL",
+        server_id:str = "server_1"
     ):
         self.config = {
             "general": {
@@ -32,7 +34,9 @@ class Config:
                 "port_number": port_number,
                 "load_balancer": load_balancer,
                 "is_load_balancer_processing_node":is_load_balancer_processing_node,
-                "audio_stream_byte_rate_per_second":audio_stream_byte_rate_per_second
+                "audio_stream_byte_rate_per_second":audio_stream_byte_rate_per_second,
+                "database_urls":database_url,
+                "server_id":server_id
             },
             "security": {
                 "use_encryption": use_encryption,

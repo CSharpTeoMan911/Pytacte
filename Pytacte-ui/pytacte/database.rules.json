@@ -52,6 +52,11 @@
           ".read": false,
           ".write": false,
           ".validate": "newData.isBoolean()"
+        },
+        "last_heartbeat": {
+          ".read": false,
+          ".write": false,
+          ".validate": "newData.isNumber()"
         }
       }
     },
@@ -71,6 +76,11 @@
           ".read": false,
           ".write": false,
           ".validate": "newData.isString()"
+        },
+        "last_heartbeat": {
+          ".read": false,
+          ".write": false,
+          ".validate": "newData.isNumber()"
         }
       }
     }

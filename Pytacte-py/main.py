@@ -302,6 +302,17 @@ async def main():
         print("--> [ Loading server configuration ]")
         global loaded_config
         loaded_config = initiate_config()
+        
+        database_url = loaded_config['general']['database_url']
+        
+        
+        
+        if (loaded_config['general']['database_url'] == None):
+            raise RuntimeError('Set the firebase database urls.')
+        
+        if (len(loaded_config['general']['database_urls']) == 0):
+            raise RuntimeError('Set the firebase database urls.')
+        
 
         print("--> [ Loading server certificates ]")
         await cert_management()
