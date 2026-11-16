@@ -1,15 +1,24 @@
 """Cross-platform system metrics used by the load balancer."""
 
 import psutil
+from firebase_admin import App
+
+from firebase.firebase_database import FirebaseDatabase, ServerAvailabilityDTO
 
 
 class LoadBalancer:
-    def __init__(self, database_url):
+    def __init__(
+        self, database_url: str, max_transcription_jobs_per_user: int, firebase_app: App
+    ):
         # Prime psutil's non-blocking CPU sampler. Its first reading is otherwise
         # always 0 because it has no previous sample to compare against.
-        self.database_connection = database_url
+        self.database_connection = FirebaseDatabase(
+            database_url=database_url,
+            max_transcription_jobs_per_user=max_transcription_jobs_per_user,
+            firebase_app=firebase_app,
+        )
         psutil.cpu_percent(interval=None)
-    
+
     def get_cpu_and_ram_metrics(self):
         """Return current system-wide CPU and virtual memory usage.
 
@@ -18,14 +27,39 @@ class LoadBalancer:
         """
         memory = psutil.virtual_memory()
         return {
-            "cpu_percent": psutil.cpu_percent(interval=None),
+            "cpu_percent": psutil.cpu_percent(interval=1),
             "ram_percent": memory.percent,
-            "ram_used_bytes": memory.used,
-            "ram_total_bytes": memory.total,
         }
-    
-    def update_cpu_and_ram_metrics(self):
+
+    def update_cpu_and_ram_metrics(
+        self, server_id: str, data: ServerAvailabilityDTO
+    ) -> tuple[bool, str]:
         """Refresh the cached metrics and return the resulting snapshot."""
         metrics = self.get_cpu_and_ram_metrics()
+       
+        data.cpu_usage = metrics['cpu_percent']
+        data.ram_usage = metrics['ram_percent']
         
-        return metrics
+        server_availability: ServerAvailabilityDTO | None = (
+            self.database_connection.get_server_availability(server_id=server_id)
+        )
+        
+        if server_availability is not None:
+            is_successful, payload = self.database_connection.update_server_availability_heartbeat(server_id=server_id, cpu_usage=data.cpu_usage, ram_usage=data.ram_usage)
+
+            if not is_successful:
+                return [is_successful, payload]
+        else:
+            is_successful, payload = self.database_connection.create_server_availability(record=data)
+            
+            if not is_successful:
+                return [is_successful, payload]
+        
+        return [True, 'Metrics updated successfully']
+    
+    
+    def delete_expired_items(self) -> tuple[tuple[bool, bool], tuple[str, str]]:
+        is_sucessful, message = self.database_connection.delete_expired_transcription_jobs()
+        _is_sucessful, _message = self.database_connection.delete_expired_servers()
+            
+        return [[is_sucessful, _is_sucessful], [message, _message]]

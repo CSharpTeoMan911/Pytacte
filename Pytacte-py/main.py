@@ -4,11 +4,15 @@ import queue
 import ssl
 import threading
 import time
+from time import monotonic
+from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 
 from websockets.asyncio.server import ServerConnection, serve
 
 from firebase.firebase_auth import FirebaseAuth
+from firebase.firebase_database import ServerAvailabilityDTO
+from server.load_balancer import LoadBalancer
 from server.transcription_service import SpeechToTextInterface, TrasncriptionResult
 from utils.ConfigManager import Config
 from utils.Crytography import RSA_Crypto
@@ -17,12 +21,19 @@ from utils.IpRateLimiter import RateLimiter
 AUTH_CHECKUP_TIME: float = 5  # 5 seconds timeout
 FILE_NAME = "server_config.json"
 
+start_time = monotonic()
+
+flag = threading.Event()
+
+thread_pool = ThreadPoolExecutor()
+
 config = Config(use_encryption=True)
 
 auth = FirebaseAuth()
 ip_rate_limiter = RateLimiter()
 
 loaded_config: object = {}
+load_balancer:LoadBalancer | None = None
 
 
 model_options = {
@@ -31,26 +42,31 @@ model_options = {
             "Floating-Point 32": SpeechToTextInterface(
                 model_name="Nemo CTC Critinet 512",
                 model_precision="Floating-Point 32",
+                thread_pool=thread_pool,
             ),
             "Quantised 8": SpeechToTextInterface(
                 model_name="Nemo CTC Critinet 512",
                 model_precision="Quantised 8",
+                thread_pool=thread_pool,
             ),
         },
         "Nemo CTC Conformer Large": {
             "Floating-Point 32": SpeechToTextInterface(
                 model_name="Nemo CTC Conformer Large",
                 model_precision="Floating-Point 32",
+                thread_pool=thread_pool,
             ),
             "Quantised 8": SpeechToTextInterface(
                 model_name="Nemo CTC Conformer Large",
                 model_precision="Quantised 8",
+                thread_pool=thread_pool,
             ),
         },
         "Nemo Parakeet TDT-CTC 110M": {
             "Quantised 8": SpeechToTextInterface(
                 model_name="Nemo Parakeet TDT-CTC 110M",
                 model_precision="Quantised 8",
+                thread_pool=thread_pool,
             ),
         },
     },
@@ -75,6 +91,14 @@ def initiate_config() -> object:
     except Exception as e:
         print(f"--> [ Error: {e}]")
         raise
+    
+def load_balancing(flag:threading.Event):
+    global start_time
+    
+    while not flag.is_set():
+        if monotonic() - start_time > (60 * 5):
+            start_time = monotonic()
+            load_balancer.delete_expired_items()
 
 
 async def cert_management():
@@ -300,18 +324,10 @@ async def echo(websocket: ServerConnection):
 async def main():
     try:
         print("--> [ Loading server configuration ]")
+        
+        global load_balancer
         global loaded_config
         loaded_config = initiate_config()
-        
-        database_url = loaded_config['general']['database_url']
-        
-        
-        
-        if (loaded_config['general']['database_url'] == None):
-            raise RuntimeError('Set the firebase database urls.')
-        
-        if (len(loaded_config['general']['database_urls']) == 0):
-            raise RuntimeError('Set the firebase database urls.')
         
 
         print("--> [ Loading server certificates ]")
@@ -322,8 +338,35 @@ async def main():
         await auth.initiate_app(loaded_config["firebase"]["firebase_key_name"])
 
         print("--> [ Firebase Admin SDK app initiated ]")
+        
+        
+        print("--> [ Initalising load balancer ]")
+        
+        database_url = loaded_config['general']['database_url']
+        max_transcription_jobs = loaded_config['transcription']['max_transcription_jobs_per_user']
+        
+        server_id = loaded_config['general']['server_id']
+        server_address = loaded_config['general']['address']
+        load_balancer = loaded_config['general']['load_balancer']
+        tls = loaded_config['security']['use_encryption']
+        
+        
+        
+        data = ServerAvailabilityDTO(server_id=server_id, server_address=server_address, load_balancer=load_balancer, tls=tls, cpu_usage=0, ram_usage=0)
+        load_balancer = LoadBalancer(database_url=database_url, max_transcription_jobs_per_user=max_transcription_jobs, firebase_app=auth.get_app())
+        is_successful, message = load_balancer.update_cpu_and_ram_metrics(server_id=server_id, data=data)
+        
+        if not is_successful:
+            raise ValueError(f"( Please add a valid firebase database url ) ( {message} )")
+        else:
+            print("--> [ Load balancer initialised ]")
+            
+        thread_pool.submit(load_balancing)
+        
+        
+        
 
-        IP = loaded_config["general"]["address"]
+        IP = loaded_config["general"]["ip_address"]
         PORT = loaded_config["general"]["port_number"]
 
         if (

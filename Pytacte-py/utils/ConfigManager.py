@@ -13,8 +13,9 @@ class ConfigResult:
 class Config:
     def __init__(
         self,
-        address: str = "127.0.0.1",
+        ip_address: str = "127.0.0.1",
         port_number: int = 80,
+        address: str = '127.0.0.1:80',
         use_encryption: bool = False,
         encrypt_cert: bool = False,
         generate_self_signed: bool = False,
@@ -30,12 +31,13 @@ class Config:
     ):
         self.config = {
             "general": {
-                "address": address,
+                "ip_address": ip_address,
                 "port_number": port_number,
+                "address":address,
                 "load_balancer": load_balancer,
                 "is_load_balancer_processing_node":is_load_balancer_processing_node,
                 "audio_stream_byte_rate_per_second":audio_stream_byte_rate_per_second,
-                "database_urls":database_url,
+                "database_url":database_url,
                 "server_id":server_id
             },
             "security": {

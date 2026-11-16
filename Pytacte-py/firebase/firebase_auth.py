@@ -12,7 +12,7 @@ from utils.GoogleSecretsManager import GoogleSecretsManager, ReturnValue
 class FirebaseAuth:
     def __init__(self):
         self.secrets_manager:GoogleSecretsManager = GoogleSecretsManager()
-        self.firebase_app:App | None = None
+        self.__firebase_app__:App | None = None
         
     async def initiate_app(self, key_name:str | None):
         
@@ -58,7 +58,7 @@ class FirebaseAuth:
     async def __initialise_app__(self, key:dict):
         try:
             cred = credentials.Certificate(key)
-            self.firebase_app = firebase_admin.initialize_app(cred)
+            self.__firebase_app__ = firebase_admin.initialize_app(cred)
         except ValueError as e:
             raise RuntimeError(f'--> [ Error: {e} ]')
         
@@ -81,7 +81,9 @@ class FirebaseAuth:
             return [False, 'User disabled']
         except auth.CertificateFetchError:
             return [False, 'Certificate error']
-
+        
+    def get_app(self) -> App:
+        return self.__firebase_app__
 
     def __remove_id_token__(self, uid:str) -> bool:
         try:

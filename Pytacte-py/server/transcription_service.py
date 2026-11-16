@@ -2,6 +2,7 @@ import queue
 import threading
 import typing
 from collections import deque
+from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -104,7 +105,9 @@ class SpeechToTextInterface:
         },
     }
 
-    def __init__(self, model_name: str, model_precision: str):
+    def __init__(
+        self, model_name: str, model_precision: str, thread_pool: ThreadPoolExecutor
+    ):
         MODEL_PATH = Path(self.MODELS[model_name]["precision"][model_precision])
 
         self.recognizer = sherpa_onnx.OfflineRecognizer.from_nemo_ctc(
@@ -115,6 +118,7 @@ class SpeechToTextInterface:
             feature_dim=80,
             decoding_method="greedy_search",
         )
+        self.thread_pool = thread_pool
 
     def add_audio_chunk(
         self, audio_chunk: bytes | bytearray | memoryview, audio_queue: queue.Queue
@@ -183,12 +187,12 @@ class SpeechToTextInterface:
         minimum_frames = max(1, self.MIN_SPEECH_MS // self.FRAME_MS)
         pre_roll_frames = max(1, self.PRE_ROLL_MS // self.FRAME_MS)
 
-        worker = threading.Thread(
-            target=self.__asr_worker__,
-            daemon=True,
-            args=(asr_queue, recognition_result, thread_flag),
+        self.thread_pool.submit(
+            self.__asr_worker__,
+            asr_queue=asr_queue,
+            recognition_result=recognition_result,
+            thread_flag=thread_flag,
         )
-        worker.start()
 
         pre_roll = deque(maxlen=pre_roll_frames)
 
@@ -263,15 +267,11 @@ class SpeechToTextInterface:
         recognition_result: TrasncriptionResult,
         thread_flag: threading.Event,
     ):
-        asr_thread = threading.Thread(
-            target=self.__transcription_service__,
-            daemon=True,
-            name="ASRSession",
-            args=(
-                audio_queue,
-                asr_queue,
-                recognition_result,
-                thread_flag,
-            ),
+
+        self.thread_pool.submit(
+            self.__transcription_service__,
+            audio_queue=audio_queue,
+            asr_queue=asr_queue,
+            recognition_result=recognition_result,
+            thread_flag=thread_flag,
         )
-        asr_thread.start()

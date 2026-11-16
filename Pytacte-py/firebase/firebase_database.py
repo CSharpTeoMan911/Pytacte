@@ -1,36 +1,100 @@
 """Firebase Realtime Database access for server-owned records."""
 
-from datetime import datetime, timezone
-from typing import Any, ClassVar
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
 from firebase_admin import App, db
 from firebase_admin.exceptions import FirebaseError
 
 
+@dataclass
+class TranscriptionJobsDTO:
+    """DTO for one record in the ``TranscriptionJobs`` table."""
+
+    transcription_id: str
+    uuid: str
+    server_id: str
+    last_heartbeat: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.transcription_id:
+            raise ValueError("transcription_id must not be empty")
+        if not self.uuid:
+            raise ValueError("uuid must not be empty")
+        if not self.server_id:
+            raise ValueError("server_id must not be empty")
+        if self.last_heartbeat is not None and (
+            isinstance(self.last_heartbeat, bool)
+            or not isinstance(self.last_heartbeat, int)
+        ):
+            raise ValueError("last_heartbeat must be an integer timestamp")
+
+    def to_record(self) -> dict[str, str | int]:
+        record: dict[str, str | int] = {
+            "transcription_id": self.transcription_id,
+            "uuid": self.uuid,
+            "server_id": self.server_id,
+        }
+        if self.last_heartbeat is not None:
+            record["last_heartbeat"] = self.last_heartbeat
+        return record
+
+
+@dataclass
+class ServerAvailabilityDTO:
+    """DTO for one record in the ``ServerAvailability`` table."""
+
+    server_id: str
+    server_address: str
+    load_balancer: bool
+    tls: bool
+    cpu_usage: float
+    ram_usage: float
+    last_heartbeat: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.server_id:
+            raise ValueError("server_id must not be empty")
+        if not self.server_address:
+            raise ValueError("server_address must not be empty")
+        if not isinstance(self.load_balancer, bool):
+            raise TypeError("load_balancer must be a boolean")
+        if not isinstance(self.tls, bool):
+            raise TypeError("tls must be a boolean")
+        if isinstance(self.cpu_usage, bool) or not isinstance(
+            self.cpu_usage, (int, float)
+        ):
+            raise TypeError("cpu_usage must be a number")
+        if isinstance(self.ram_usage, bool) or not isinstance(
+            self.ram_usage, (int, float)
+        ):
+            raise TypeError("ram_usage must be a number")
+        self.cpu_usage = float(self.cpu_usage)
+        self.ram_usage = float(self.ram_usage)
+        if self.last_heartbeat is not None and (
+            isinstance(self.last_heartbeat, bool)
+            or not isinstance(self.last_heartbeat, int)
+        ):
+            raise ValueError("last_heartbeat must be an integer timestamp")
+
+    def to_record(self) -> dict[str, str | int | float | bool]:
+        record: dict[str, str | int | float | bool] = {
+            "server_id": self.server_id,
+            "server_address": self.server_address,
+            "load_balancer": self.load_balancer,
+            "tls": self.tls,
+            "cpu_usage": self.cpu_usage,
+            "ram_usage": self.ram_usage,
+        }
+        if self.last_heartbeat is not None:
+            record["last_heartbeat"] = self.last_heartbeat
+        return record
+
+
 class FirebaseDatabase:
-    """Encapsulate CRUD operations for load-balancer database records.
-
-    The Admin SDK is used so server writes can update fields that client
-    security rules mark as read-only. ``database_url`` must be the Realtime
-    Database instance URL for the Firebase project.
-    """
-
-    TRANSCRIPTION_JOB_FIELDS: ClassVar = {
-        "transcription_id": str,
-        "uuid": str,
-        "server_id": str,
-        "last_heartbeat": int,
-    }
-    SERVER_AVAILABILITY_FIELDS: ClassVar = {
-        "server_id": str,
-        "server_address": str,
-        "tls": bool,
-        "cpu_usage": (int, float),
-        "ram_usage": (int, float),
-        "load_balancer": bool,
-        "last_heartbeat": int,
-    }
+    """Encapsulate CRUD operations for load-balancer database records."""
 
     def __init__(
         self,
@@ -38,7 +102,6 @@ class FirebaseDatabase:
         max_transcription_jobs_per_user: int,
         firebase_app: App | None = None,
     ):
-        self.__validate_database_url__(database_url)
         if (
             isinstance(max_transcription_jobs_per_user, bool)
             or not isinstance(max_transcription_jobs_per_user, int)
@@ -85,33 +148,27 @@ class FirebaseDatabase:
             raise ValueError(
                 "HTTP is only allowed for a local Realtime Database emulator"
             )
-        
-        
-
-
 
     # -------------------------------
-    #   TranscriptionJobs (table)
+    # TranscriptionJobs table
     # -------------------------------
 
-    def create_transcription_job(self, user_uid: str) -> tuple[bool, str]:
-        """Create a job with a Firebase-generated ID, if the user is under quota."""
+    def create_transcription_job(
+        self, user_uid: str, server_id: str
+    ) -> tuple[bool, TranscriptionJobsDTO | str]:
+        """Create a job with a Firebase-generated ID, if its user is under quota."""
         try:
-            server_availability = self.get_server_availability()
-            if not isinstance(server_availability, dict):
-                return False, "No server availability records are available"
-            server_id = server_availability.get("server_id")
-            if not isinstance(server_id, str) or not server_id:
-                return False, "The first server availability record has no valid server_id"
-
-            data = {"uuid": user_uid, "server_id": server_id}
-            self.__validate_data__(data, self.TRANSCRIPTION_JOB_FIELDS)
+            if not isinstance(user_uid, str) or not user_uid:
+                raise ValueError("user_uid must be a non-empty string")
+            self.__validate_record_id__(server_id)
             job_count = self.__count_transcription_jobs_for_user__(user_uid)
             if job_count >= self.max_transcription_jobs_per_user:
                 return (
                     False,
-                    ("User has reached the maximum number of transcription jobs "
-                    f"({self.max_transcription_jobs_per_user})"),
+                    (
+                        "User has reached the maximum number of transcription jobs "
+                        f"({self.max_transcription_jobs_per_user})"
+                    ),
                 )
 
             collection = db.reference(
@@ -122,128 +179,219 @@ class FirebaseDatabase:
             if transcription_id is None:
                 return False, "Firebase did not generate a transcription ID"
 
-            record = {**data, "transcription_id": transcription_id}
-            reference.set(record)
-            return True, f"Transcription job {transcription_id} created"
+            record = TranscriptionJobsDTO(
+                transcription_id=transcription_id,
+                uuid=user_uid,
+                server_id=server_id,
+                last_heartbeat=self.__current_heartbeat__(),
+            )
+            reference.set(record.to_record())
+            return True, record
         except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
             return False, f"Failed to create transcription job: {error}"
 
-    def get_transcription_job(self, transcription_id: str) -> dict[str, Any] | None:
-        """Return a transcription job or ``None`` when it does not exist."""
+    def get_transcription_job(
+        self, transcription_id: str
+    ) -> TranscriptionJobsDTO | None:
+        """Return a transcription job DTO, or ``None`` if it does not exist."""
         self.__validate_record_id__(transcription_id)
-        return self.__reference__("TranscriptionJobs", transcription_id).get()
+        record = self.__reference__("TranscriptionJobs", transcription_id).get()
+        return self.__record_to_transcription_jobs_dto__(record)
 
     def update_transcription_job_heartbeat(
         self, transcription_id: str
-    ) -> tuple[bool, str]:
-        """Update a job's heartbeat to today's UTC date in YYYYMMdd form."""
+    ) -> tuple[bool, TranscriptionJobsDTO | str]:
+        """Update the heartbeat and return the updated transcription DTO."""
         try:
             self.__validate_record_id__(transcription_id)
-            heartbeat_date = int(datetime.now(timezone.utc).strftime("%Y%m%d"))
             self.__update__(
                 "TranscriptionJobs",
                 transcription_id,
-                {"last_heartbeat": heartbeat_date},
+                {"last_heartbeat": self.__current_heartbeat__()},
             )
-            return True, f"Heartbeat updated for transcription job {transcription_id}"
+            record = self.get_transcription_job(transcription_id)
+            if record is None:
+                return False, f"Transcription job {transcription_id} was not found"
+            return True, record
         except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
             return False, f"Failed to update transcription job heartbeat: {error}"
 
-    def delete_transcription_job(self, transcription_id: str) -> tuple[bool, str]:
-        """Delete a transcription job."""
+    def delete_transcription_job(
+        self, transcription_id: str
+    ) -> tuple[bool, TranscriptionJobsDTO | str]:
+        """Delete a transcription job and return the deleted DTO."""
         try:
             self.__validate_record_id__(transcription_id)
+            record = self.get_transcription_job(transcription_id)
+            if record is None:
+                return False, f"Transcription job {transcription_id} was not found"
             self.__reference__("TranscriptionJobs", transcription_id).delete()
-            return True, f"Transcription job {transcription_id} deleted"
+            return True, record
         except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
             return False, f"Failed to delete transcription job: {error}"
 
-    # --------------------------------------------------------
-    
-    
-    
-    
     # -------------------------------
-    #   ServerAvailability (table)
+    # ServerAvailability table
     # -------------------------------
 
     def create_server_availability(
-        self, server_id: str, data: dict[str, Any]
-    ) -> tuple[bool, str]:
-        """Create a server availability record, rejecting an existing ID."""
+        self, record: ServerAvailabilityDTO
+    ) -> tuple[bool, ServerAvailabilityDTO | str]:
+        """Create a server availability record and return its stored DTO."""
         try:
-            
-            self.__validate_record_id__(server_id)
-            data = {
-                **data,
-                "last_heartbeat": int(datetime.now(timezone.utc).strftime("%Y%m%d")),
-            }
-            self.__validate_data__(data, self.SERVER_AVAILABILITY_FIELDS, complete=True)
-            if data["server_id"] != server_id:
-                return False, "server_id must match the record ID"
-
-            reference = self.__reference__("ServerAvailability", server_id)
+            if not isinstance(record, ServerAvailabilityDTO):
+                raise TypeError("record must be a ServerAvailabilityDTO")
+            self.__validate_record_id__(record.server_id)
+            record.last_heartbeat = self.__current_heartbeat__()
+            reference = self.__reference__("ServerAvailability", record.server_id)
             if reference.get() is not None:
-                return False, f"Server {server_id!r} already exists"
-            reference.set(data)
-            return True, f"Server availability record {server_id} created"
+                return False, f"Server {record.server_id!r} already exists"
+            reference.set(record.to_record())
+            return True, record
         except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
             return False, f"Failed to create server availability record: {error}"
 
     def get_server_availability(
-        self, server_id: str
-    ) -> dict[str, Any] | None:
-        """Return one server record, or the first record when no ID is given."""
+        self, server_id: str | None = None
+    ) -> ServerAvailabilityDTO | None:
+        """Return one server DTO, or the first record when no ID is supplied."""
         if server_id is not None:
             self.__validate_record_id__(server_id)
-            return self.__reference__("ServerAvailability", server_id).get()
+            record = self.__reference__("ServerAvailability", server_id).get()
+            return self.__record_to_server_availability_dto__(record)
 
-        records = db.reference(
-            "/ServerAvailability", app=self.firebase_app, url=self.database_url
-        ).order_by_key().limit_to_first(1).get()
-        if not isinstance(records, dict) or not records:
+        records = (
+            db.reference(
+                "/ServerAvailability", app=self.firebase_app, url=self.database_url
+            )
+            .order_by_key()
+            .limit_to_first(1)
+            .get()
+        )
+        if not isinstance(records, Mapping) or not records:
             return None
-        return next(iter(records.values()))
+        return self.__record_to_server_availability_dto__(next(iter(records.values())))
 
     def update_server_availability_heartbeat(
-        self, server_id: str
-    ) -> tuple[bool, str]:
-        """Update a server's heartbeat to today's UTC date in YYYYMMdd form."""
+        self, server_id: str, cpu_usage: float, ram_usage: float
+    ) -> tuple[bool, ServerAvailabilityDTO | str]:
+        """Update server resource usage and heartbeat, returning its DTO."""
         try:
             self.__validate_record_id__(server_id)
-            heartbeat_date = int(datetime.now(timezone.utc).strftime("%Y%m%d"))
+            if isinstance(cpu_usage, bool) or not isinstance(cpu_usage, (int, float)):
+                raise TypeError("cpu_usage must be a number")
+            if isinstance(ram_usage, bool) or not isinstance(ram_usage, (int, float)):
+                raise TypeError("ram_usage must be a number")
             self.__update__(
                 "ServerAvailability",
                 server_id,
-                {"last_heartbeat": heartbeat_date},
+                {
+                    "cpu_usage": float(cpu_usage),
+                    "ram_usage": float(ram_usage),
+                    "last_heartbeat": self.__current_heartbeat__(),
+                },
             )
-            return True, f"Heartbeat updated for server {server_id}"
+            record = self.get_server_availability(server_id)
+            if record is None:
+                return False, f"Server {server_id!r} was not found"
+            return True, record
         except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
             return False, f"Failed to update server availability heartbeat: {error}"
 
-    def delete_server_availability(self, server_id: str) -> tuple[bool, str]:
-        """Delete a server availability record."""
+    def delete_server_availability(
+        self, server_id: str
+    ) -> tuple[bool, ServerAvailabilityDTO | str]:
+        """Delete a server availability record and return the deleted DTO."""
         try:
             self.__validate_record_id__(server_id)
+            record = self.get_server_availability(server_id)
+            if record is None:
+                return False, f"Server {server_id!r} was not found"
             self.__reference__("ServerAvailability", server_id).delete()
-            return True, f"Server availability record {server_id} deleted"
+            return True, record
         except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
             return False, f"Failed to delete server availability record: {error}"
-        
-        
-    #-------------------------------------------------------------------
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    #-------------------------------
-    #   Producer Methods
-    #-------------------------------
+
+    def delete_expired_servers(self) -> tuple[bool, str]:
+        """Delete server records whose UTC heartbeat is more than five minutes old."""
+
+        expired_before = datetime.now(UTC) - timedelta(minutes=5)
+        cutoff = int(expired_before.strftime("%Y%m%d%H%M"))
+        deleted_count = 0
+
+        while True:
+            try:
+                expired_items = (
+                    db.reference(
+                        "/ServerAvailability",
+                        app=self.firebase_app,
+                        url=self.database_url,
+                    )
+                    .order_by_child("last_heartbeat")
+                    .end_at(cutoff)
+                    .limit_to_first(20)
+                    .get()
+                )
+
+                if not isinstance(expired_items, Mapping) or not expired_items:
+                   break
+               
+                expired_items_colection = iter(expired_items.items())
+                
+                try:
+                    while True:
+                        server_id, record = next(expired_items_colection)
+                        self.__reference__("ServerAvailability", server_id).delete()
+                        deleted_count += 1    
+                except StopIteration:
+                    pass
+                    
+            except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError):
+                pass
+            
+        return True, f"Deleted {deleted_count} expired server record(s)"
+
+    def delete_expired_transcription_jobs(self) -> tuple[bool, str]:
+        """Delete transcription jobs whose UTC heartbeat is over five minutes old."""
+
+        expired_before = datetime.now(UTC) - timedelta(minutes=5)
+        cutoff = int(expired_before.strftime("%Y%m%d%H%M"))
+        deleted_count = 0
+
+        while True:
+            try:
+                expired_items = (
+                    db.reference(
+                        "/TranscriptionJobs",
+                        app=self.firebase_app,
+                        url=self.database_url,
+                    )
+                    .order_by_child("last_heartbeat")
+                    .end_at(cutoff)
+                    .limit_to_first(20)
+                    .get()
+                )
+
+                if not isinstance(expired_items, Mapping) or not expired_items:
+                    break
+
+                for transcription_id in expired_items:
+                    self.__reference__(
+                        "TranscriptionJobs", transcription_id
+                    ).delete()
+                    deleted_count += 1
+            except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
+                return (
+                    False,
+                    (f"Failed to delete expired transcription jobs after deleting "
+                    f"{deleted_count}: {error}"),
+                )
+
+        return True, f"Deleted {deleted_count} expired transcription job(s)"
+
+    # -------------------------------
+    # Private producer methods
+    # -------------------------------
 
     def __reference__(self, collection: str, record_id: str):
         return db.reference(
@@ -253,26 +401,90 @@ class FirebaseDatabase:
         )
 
     def __update__(
-        self, collection: str, record_id: str, changes: dict[str, Any]
-    ) -> dict[str, Any]:
+        self,
+        collection: str,
+        record_id: str,
+        changes: Mapping[str, str | int | float | bool],
+    ) -> object:
         if not changes:
             raise ValueError("At least one field must be provided for an update")
         reference = self.__reference__(collection, record_id)
         if reference.get() is None:
             raise KeyError(f"{collection} record {record_id!r} does not exist")
-        reference.update(changes)
+        reference.update(dict(changes))
         return reference.get()
 
-    def __count_transcription_jobs_for_user__(self, user_uuid: str) -> int:
+    def __count_transcription_jobs_for_user__(self, user_uid: str) -> int:
         jobs = db.reference(
             "/TranscriptionJobs", app=self.firebase_app, url=self.database_url
         ).get()
-        if not isinstance(jobs, dict):
+        if not isinstance(jobs, Mapping):
             return 0
         return sum(
             1
             for job in jobs.values()
-            if isinstance(job, dict) and job.get("uuid") == user_uuid
+            if isinstance(job, Mapping) and job.get("uuid") == user_uid
+        )
+
+    def __current_heartbeat__(self) -> int:
+        return int(datetime.now(UTC).strftime("%Y%m%d%H%M"))
+
+    def __record_to_transcription_jobs_dto__(
+        self, record: object
+    ) -> TranscriptionJobsDTO | None:
+        if not isinstance(record, Mapping):
+            return None
+        transcription_id = record.get("transcription_id")
+        user_uid = record.get("uuid")
+        server_id = record.get("server_id")
+        heartbeat = record.get("last_heartbeat")
+        if not all(
+            isinstance(value, str) for value in (transcription_id, user_uid, server_id)
+        ):
+            return None
+        if heartbeat is not None and (
+            isinstance(heartbeat, bool) or not isinstance(heartbeat, int)
+        ):
+            return None
+        return TranscriptionJobsDTO(
+            transcription_id=transcription_id,
+            uuid=user_uid,
+            server_id=server_id,
+            last_heartbeat=heartbeat,
+        )
+
+    def __record_to_server_availability_dto__(
+        self, record: object
+    ) -> ServerAvailabilityDTO | None:
+        if not isinstance(record, Mapping):
+            return None
+        server_id = record.get("server_id")
+        server_address = record.get("server_address")
+        load_balancer = record.get("load_balancer")
+        tls = record.get("tls")
+        cpu_usage = record.get("cpu_usage")
+        ram_usage = record.get("ram_usage")
+        heartbeat = record.get("last_heartbeat")
+        if not isinstance(server_id, str) or not isinstance(server_address, str):
+            return None
+        if not isinstance(load_balancer, bool) or not isinstance(tls, bool):
+            return None
+        if isinstance(cpu_usage, bool) or not isinstance(cpu_usage, (int, float)):
+            return None
+        if isinstance(ram_usage, bool) or not isinstance(ram_usage, (int, float)):
+            return None
+        if heartbeat is not None and (
+            isinstance(heartbeat, bool) or not isinstance(heartbeat, int)
+        ):
+            return None
+        return ServerAvailabilityDTO(
+            server_id=server_id,
+            server_address=server_address,
+            load_balancer=load_balancer,
+            tls=tls,
+            cpu_usage=float(cpu_usage),
+            ram_usage=float(ram_usage),
+            last_heartbeat=heartbeat,
         )
 
     def __validate_record_id__(self, record_id: str) -> None:
@@ -282,27 +494,3 @@ class FirebaseDatabase:
             raise ValueError(
                 "Record ID contains a character forbidden in Firebase keys"
             )
-
-    def __validate_data__(
-        self, data: dict[str, Any], fields: dict[str, Any], complete: bool = False
-    ) -> None:
-        if not isinstance(data, dict):
-            raise TypeError("Record data must be a dictionary")
-        if complete and fields.keys() - data.keys():
-            missing = ", ".join(sorted(fields.keys() - data.keys()))
-            raise ValueError(f"Missing required fields: {missing}")
-        unknown = data.keys() - fields.keys()
-        if unknown:
-            raise ValueError(f"Unknown fields: {', '.join(sorted(unknown))}")
-        for name, value in data.items():
-            expected_type = fields[name]
-            if isinstance(value, bool) and expected_type in (
-                (int, float),
-                (float, int),
-            ):
-                raise TypeError(f"{name} must be a number, not a boolean")
-            if not isinstance(value, expected_type):
-                raise TypeError(f"{name} has an invalid value type")
-            
-            
-    #--------------------------------------------------------

@@ -3,6 +3,11 @@
     ".read": false,
     ".write": false,
     "Client_Available_Pytacte_Servers": {
+      ".indexOn": [
+        "server_id",
+        "server_address",
+        "tls"
+      ],
       "$serverAddress": {
         "server_id": {
           ".read": false,
@@ -22,6 +27,15 @@
       }
     },
     "ServerAvailability": {
+      ".indexOn": [
+        "server_id",
+        "server_address",
+        "tls",
+        "cpu_usage",
+        "ram_usage",
+        "load_balancer",
+        "last_heartbeat"
+      ],
       "$serverId": {
         "server_id": {
           ".read": false,
@@ -61,6 +75,12 @@
       }
     },
     "TranscriptionJobs": {
+      ".indexOn": [
+        "transcription_id",
+        "uuid",
+        "server_id",
+        "last_heartbeat"
+      ],
       "$transcriptionId": {
         "transcription_id": {
           ".read": false,
