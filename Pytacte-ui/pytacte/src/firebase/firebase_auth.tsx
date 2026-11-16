@@ -1,7 +1,6 @@
 import { app } from './firebase_app'
 import { getAuth, browserLocalPersistence, createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword, validatePassword, signOut, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 
-
 type compositeResult = [boolean, string]
 
 
@@ -52,7 +51,7 @@ export async function registerAccount(email: string, password: string): Promise<
             const user = userCredential.user;
             await sendEmailVerification(user);
         }
-        
+
         console.log('Account creation status:', status, 'Message:', message);
         return [status, message];
     }
@@ -81,7 +80,7 @@ export async function loginAccount(email: string, password: string): Promise<com
         const userCredential = await signInWithEmailAndPassword(auth, email, password)
         const user = userCredential.user;
 
-        if(user.emailVerified){
+        if (user.emailVerified) {
             return [true, 'Login Successful'];
         }
         else {
@@ -90,7 +89,20 @@ export async function loginAccount(email: string, password: string): Promise<com
         }
     }
     catch (error) {
-        return [false, error as string];
+        const error_message = (error as Error).message;
+
+        if (error_message.includes('invalid-email')) {
+            return [false, "Invalid email"]
+        }
+        else if (error_message.includes('missing-password')) {
+            return [false, "Password is missing"]
+        }
+        else if (error_message.includes('invalid-credential')) {
+            return [false, "Invalid email and/or password"]
+        }
+        else {
+            return [false, error_message]
+        }
     }
 }
 
@@ -113,7 +125,7 @@ export async function loginWithGoogle(): Promise<compositeResult> {
         return [true, 'Login Successful'];
     }
     catch (error) {
-        return [false, error as string];
+        return [false, (error as Error).message]
     }
 }
 
@@ -125,7 +137,7 @@ export async function logoutAccount(): Promise<compositeResult> {
         return [true, 'Logout Successful'];
     }
     catch (error) {
-        return [false, error as string];
+        return [false, (error as Error).message]
     }
 }
 
@@ -137,17 +149,16 @@ export async function getIfUserLoggedIn(): Promise<boolean> {
 }
 
 
-export async function getJwtToken():Promise<compositeResult>  {
-    try
-    {
-        const token:string | undefined = await auth?.currentUser?.getIdToken(false);
+export async function getJwtToken(): Promise<compositeResult> {
+    try {
+        const token: string | undefined = await auth?.currentUser?.getIdToken(false);
 
-        if(token)
+        if (token)
             return [true, token];
         else
             throw 'Token cannot be retireved';
     }
-    catch(error){
-        return [false, error as string];
+    catch (error) {
+        return [false, (error as Error).message]
     }
 }
