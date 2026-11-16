@@ -23,6 +23,7 @@ import { getJwtToken } from '../firebase/firebase_auth'
 import { jsPDF } from "jspdf";
 import '../../fonts/Tiny5-Duo-normal.js';
 import NotificationSystem from "../components/NotificationSystem.js"
+import { getAvailableServer } from '#/firebase/firebase_database.js'
 
 
 const transcriptionEditorTheme = EditorView.theme({
@@ -139,13 +140,13 @@ function Home() {
 
 
   async function notificationCloseCallback() {
-    if (notificationType === 'error' && 
-      (notificationText === 'Invalid log in session.' || 
-       notificationText === 'Log in session expired.' || 
-       notificationText === 'Log in session revoked.')) {
+    if (notificationType === 'error' &&
+      (notificationText === 'Invalid log in session.' ||
+        notificationText === 'Log in session expired.' ||
+        notificationText === 'Log in session revoked.')) {
 
-        logoutAccount();
-        window.location.href = '/auth';
+      logoutAccount();
+      window.location.href = '/auth';
     }
   }
 
@@ -359,9 +360,21 @@ function Home() {
 
     if (!webWorkerInit.current && webSocketStreaming) {
       shutdownRequestedRef.current = false;
-      const protocol = 'wss';
-      webSocketStreaming?.postMessage(['127.0.0.1', '80', protocol]);
-      webSocketStreamingRef.current = webSocketStreaming;
+
+      getAvailableServer().then((result) => {
+        if (result.isSucessful) {
+          const [address, protocol] = result.payload;
+
+          console.log("address: " + address)
+          console.log("protocol: " + protocol)
+
+          webSocketStreaming?.postMessage([address, protocol]);
+          webSocketStreamingRef.current = webSocketStreaming;
+        }
+        else {
+          console.log(result.payload)
+        }
+      });
     }
     else {
       if (webWorkerInit.current) {

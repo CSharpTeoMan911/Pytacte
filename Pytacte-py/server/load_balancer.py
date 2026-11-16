@@ -31,6 +31,15 @@ class LoadBalancer:
         self, server_id: str, data: ServerAvailabilityDTO
     ) -> tuple[bool, str]:
         """Refresh the cached metrics and return the resulting snapshot."""
+        if not isinstance(server_id, str):
+            raise TypeError("server_id must be a string")
+        if not server_id:
+            raise ValueError("server_id must not be empty")
+        if not isinstance(data, ServerAvailabilityDTO):
+            raise TypeError("data must be a ServerAvailabilityDTO")
+        if data.server_id != server_id:
+            raise ValueError("data.server_id must match server_id")
+
         cpu_usage = self.get_cpu_metrics()
        
         data.cpu_usage = cpu_usage
@@ -40,7 +49,7 @@ class LoadBalancer:
         )
         
         if server_availability is not None:
-            is_successful, payload = self.database_connection.update_server_availability_heartbeat(server_id=server_id, cpu_usage=data.cpu_usage)
+            is_successful, payload = self.database_connection.update_server_availability_heartbeat(data=data)
 
             if not is_successful:
                 return [is_successful, payload]

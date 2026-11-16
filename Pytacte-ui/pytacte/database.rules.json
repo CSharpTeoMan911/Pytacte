@@ -1,8 +1,8 @@
 {
   "rules": {
-    ".read": false,
-    ".write": false,
+    ".write":false,
     "Client_Available_Pytacte_Servers": {
+      ".read": "auth != null",
       ".indexOn": [
         "server_id",
         "server_address",
@@ -10,6 +10,7 @@
         "cpu_usage"
       ],
       "$serverAddress": {
+        ".read": "auth != null",
         "server_id": {
           ".read": false,
           ".write": false,

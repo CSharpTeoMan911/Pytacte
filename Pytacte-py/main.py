@@ -33,7 +33,7 @@ auth = FirebaseAuth()
 ip_rate_limiter = RateLimiter()
 
 loaded_config: object = {}
-load_balancer:LoadBalancer | None = None
+load_balancer: LoadBalancer | None = None
 
 
 model_options = {
@@ -91,15 +91,48 @@ def initiate_config() -> object:
     except Exception as e:
         print(f"--> [ Error: {e}]")
         raise
-    
-def load_balancing(flag:threading.Event):
+
+
+def load_balancing(flag: threading.Event):
     global start_time
+
+    prev_time:int = 0
+    heartbeat_period:int = 30
+    load_balancing_period:int =  60 * 2
     
     while not flag.is_set():
-        if monotonic() - start_time > (60 * 5):
-            start_time = monotonic()
+        current_time = int(monotonic() - start_time)
+        
+        if current_time % heartbeat_period == 0 and prev_time != current_time:
+            server_id: str = loaded_config["general"]["server_id"]
+            server_address = loaded_config["general"]["address"]
+            is_load_balancer = loaded_config["general"]["load_balancer"]
+            tls = loaded_config["security"]["use_encryption"]
+
+            data = ServerAvailabilityDTO(
+                server_id=server_id,
+                server_address=server_address,
+                load_balancer=is_load_balancer,
+                tls=tls,
+                cpu_usage=0,
+            )
+
+            load_balancer.update_cpu_and_ram_metrics(server_id=server_id, data=data)
+        
+        if (
+            current_time > 0
+            and current_time % load_balancing_period == 0
+            and prev_time != current_time
+            and loaded_config["general"]["load_balancer"]
+        ):
+            
             load_balancer.delete_expired_items()
             load_balancer.sort_servers_by_cpu()
+            
+            start_time = monotonic()
+            prev_time = 0
+            
+        prev_time = current_time
 
 
 async def cert_management():
@@ -241,7 +274,6 @@ async def echo(websocket: ServerConnection):
                                         message="<Internal_Server_Error/>", text=True
                                     )
 
-
                         else:
                             await websocket.send(message="<JWT_Valid/>", text=True)
                             jwt_checked = True
@@ -317,7 +349,7 @@ async def echo(websocket: ServerConnection):
     except Exception as e:  # noqa: BLE001, F841, S110
         print(e)
         pass
-    
+
     except KeyboardInterrupt:
         ASR_FLAG.set()
 
@@ -330,11 +362,10 @@ async def main():
         global load_balancer
         global loaded_config
         global start_time
-        
+
         print("--> [ Loading server configuration ]")
-    
+
         loaded_config = initiate_config()
-        
 
         print("--> [ Loading server certificates ]")
         await cert_management()
@@ -344,35 +375,45 @@ async def main():
         await auth.initiate_app(loaded_config["firebase"]["firebase_key_name"])
 
         print("--> [ Firebase Admin SDK app initiated ]")
-        
-        
+
         print("--> [ Initalising load balancer ]")
-        
-        database_url = loaded_config['general']['database_url']
-        max_transcription_jobs = loaded_config['transcription']['max_transcription_jobs_per_user']
-        
-        server_id = loaded_config['general']['server_id']
-        server_address = loaded_config['general']['address']
-        load_balancer = loaded_config['general']['load_balancer']
-        tls = loaded_config['security']['use_encryption']
-        
-        
-        
-        data = ServerAvailabilityDTO(server_id=server_id, server_address=server_address, load_balancer=load_balancer, tls=tls, cpu_usage=0)
-        load_balancer = LoadBalancer(database_url=database_url, max_transcription_jobs_per_user=max_transcription_jobs, firebase_app=auth.get_app())
-        is_successful, message = load_balancer.update_cpu_and_ram_metrics(server_id=server_id, data=data)
-        
+
+        database_url = loaded_config["general"]["database_url"]
+        max_transcription_jobs = loaded_config["transcription"][
+            "max_transcription_jobs_per_user"
+        ]
+
+        server_id = loaded_config["general"]["server_id"]
+        server_address = loaded_config["general"]["address"]
+        load_balancer = loaded_config["general"]["load_balancer"]
+        tls = loaded_config["security"]["use_encryption"]
+
+        data = ServerAvailabilityDTO(
+            server_id=server_id,
+            server_address=server_address,
+            load_balancer=load_balancer,
+            tls=tls,
+            cpu_usage=0,
+        )
+        load_balancer = LoadBalancer(
+            database_url=database_url,
+            max_transcription_jobs_per_user=max_transcription_jobs,
+            firebase_app=auth.get_app(),
+        )
+        is_successful, message = load_balancer.update_cpu_and_ram_metrics(
+            server_id=server_id, data=data
+        )
+        print(is_successful, message)
+
         if not is_successful:
-            raise ValueError(f"( Please add a valid firebase database url ) ( {message} )")
+            raise ValueError(
+                f"( Please add a valid firebase database url ) ( {message} )"
+            )
         else:
             print("--> [ Load balancer initialised ]")
-        
-        if loaded_config["general"]["load_balancer"]:
-            start_time = monotonic()
-            thread_pool.submit(load_balancing, flag=flag)
-        
-        
-        
+
+        start_time = monotonic()
+        thread_pool.submit(load_balancing, flag=flag)
 
         IP = loaded_config["general"]["ip_address"]
         PORT = loaded_config["general"]["port_number"]
@@ -420,7 +461,7 @@ async def main():
     except Exception as e:
         print(f"--> [Error: {e}]")
         raise
-    
+
     finally:
         pass
 

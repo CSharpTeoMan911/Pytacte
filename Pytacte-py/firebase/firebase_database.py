@@ -135,6 +135,7 @@ class FirebaseDatabase:
             raise ValueError(
                 "max_transcription_jobs_per_user must be a non-negative integer"
             )
+        self.__validate_database_url__(database_url)
         self.database_url = database_url
         self.max_transcription_jobs_per_user = max_transcription_jobs_per_user
         self.firebase_app = firebase_app
@@ -369,7 +370,13 @@ class FirebaseDatabase:
 
         # ---------------------------------------------
 
-        limit = items_count / 2
+        if items_count == 0:
+            return
+
+        limit = items_count / 2 
+        
+        limit = 1 if limit == 0 else limit
+        
         while True:
             items = (
                 db.reference(
@@ -399,24 +406,52 @@ class FirebaseDatabase:
                 break
 
     def update_server_availability_heartbeat(
-        self, server_id: str, cpu_usage: float
+        self, data: ServerAvailabilityDTO
     ) -> tuple[bool, ServerAvailabilityDTO | str]:
         """Update server resource usage and heartbeat, returning its DTO."""
         try:
-            self.__validate_record_id__(server_id)
-            if isinstance(cpu_usage, bool) or not isinstance(cpu_usage, (int, float)):
+            if not isinstance(data, ServerAvailabilityDTO):
+                raise TypeError("data must be a ServerAvailabilityDTO")
+            self.__validate_record_id__(data.server_id)
+            if isinstance(data.cpu_usage, bool) or not isinstance(data.cpu_usage, (int, float)):
                 raise TypeError("cpu_usage must be a number")
             self.__update__(
                 "ServerAvailability",
-                server_id,
+                data.server_id,
                 {
-                    "cpu_usage": float(cpu_usage),
+                    "cpu_usage": float(data.cpu_usage),
                     "last_heartbeat": self.__current_heartbeat__(),
                 },
             )
-            record = self.get_server_availability(server_id)
+
+            record = self.get_server_availability(data.server_id)
             if record is None:
-                return False, f"Server {server_id!r} was not found"
+                return False, f"Server {data.server_id!r} was not found"
+
+            client_data = ClientAvailablePytacteServersDTO(
+                server_id=record.server_id,
+                server_address=record.server_address,
+                tls=record.tls,
+                cpu_usage=float(data.cpu_usage),
+            )
+            try:
+                client_reference = self.__reference__(
+                    "Client_Available_Pytacte_Servers", data.server_id
+                )
+                if client_reference.get() is None:
+                    client_reference.set(client_data.to_record())
+                else:
+                    client_reference.update(client_data.to_record())
+            except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
+                return (
+                    False,
+                    (
+                        "ServerAvailability was updated, but synchronizing "
+                        "Client_Available_Pytacte_Servers failed: "
+                        f"{error}"
+                    ),
+                )
+
             return True, record
         except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
             return False, f"Failed to update server availability heartbeat: {error}"

@@ -103,15 +103,24 @@ def test_server_and_transcription_job_crud_round_trip(database):
             url=database.database_url,
         ).update({"last_heartbeat": 20000101})
 
+        heartbeat_data = ServerAvailabilityDTO(
+            server_id=server_id,
+            server_address=server_data.server_address,
+            tls=server_data.tls,
+            cpu_usage=31.5,
+            load_balancer=server_data.load_balancer,
+        )
         updated_server = database.update_server_availability_heartbeat(
-            server_id, cpu_usage=31.5
+            heartbeat_data
         )
         assert updated_server[0], updated_server[1]
         stored_server = database.get_server_availability(server_id)
+        stored_client_server = client_server_reference.get()
         expected_heartbeat = int(datetime.now(UTC).strftime("%Y%m%d%H%M"))
         assert stored_server.last_heartbeat == expected_heartbeat
         assert stored_server.last_heartbeat != 20000101
         assert stored_server.cpu_usage == 31.5
+        assert stored_client_server["cpu_usage"] == 31.5
 
         updated_server_data = ServerAvailabilityDTO(
             server_id=server_id,
@@ -359,6 +368,31 @@ def test_delete_expired_servers_removes_expired_and_preserves_fresh(database):
     finally:
         # Clean up test records left behind by the method or a failed assertion.
         collection.update({server_id: None for server_id in test_records})
+
+
+def test_delete_expired_server_with_only_last_heartbeat(database):
+    server_id = f"expired-single-field-test-{uuid4().hex}"
+    collection = firebase_db.reference(
+        "/ServerAvailability",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+    expired_record = {
+        "last_heartbeat": int(
+            (datetime.now(UTC) - timedelta(minutes=10)).strftime("%Y%m%d%H%M")
+        )
+    }
+
+    try:
+        collection.child(server_id).set(expired_record)
+        assert collection.child(server_id).get() == expired_record
+
+        result = database.delete_expired_servers()
+
+        assert result[0], result[1]
+        assert collection.child(server_id).get() is None
+    finally:
+        collection.child(server_id).delete()
 
 
 def test_delete_expired_transcription_jobs_preserves_fresh_jobs(database):

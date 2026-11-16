@@ -54,6 +54,8 @@ async function handleAuthentication(isGoogleLogIn: boolean, email: string, passw
         else {
             const [status, message] = await loginAccount(email, password);
 
+            console.log(message)
+
             if (status) {
                 setNotificationText(message);
                 setNotificationType('success');

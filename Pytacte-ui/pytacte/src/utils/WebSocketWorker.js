@@ -9,10 +9,11 @@ function postStatus(message) {
   self.postMessage([true, message]);
 }
 
-function connect(protocolValue, hostValue, portValue) {
+function connect(protocolValue, address) {
   let protocol;
-  const host = String(hostValue).trim();
-  const port = Number(portValue);
+  
+  const host = String(address).split(':')[0].trim();
+  const port = Number(String(address).split(':')[1]);
 
   if (protocolValue == null || protocolValue === '') {
     // Keep the current two-item init message working as a fallback.
@@ -34,13 +35,14 @@ function connect(protocolValue, hostValue, portValue) {
     return;
   }
 
+
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    postStatus(`[ WebSocket error: invalid port "${portValue}" ]`);
+    postStatus(`[ WebSocket error: invalid port "${String(address).split(':')[1]}" ]`);
     return;
   }
 
   try {
-    const url = new URL(`${protocol}://${host}`);
+    const url = new URL(`${protocol}://${String(address).trim()}`);
     url.port = String(port);
 
     const connection = new WebSocket(url);
@@ -81,7 +83,7 @@ function connect(protocolValue, hostValue, portValue) {
     };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    postStatus(`[ WebSocket setup error: ${detail} ]`);
+    postStatus(`[ WebSocket setup error: ${error} ]`);
   }
 }
 
@@ -126,10 +128,11 @@ self.onmessage = (event) => {
     return;
   }
 
-  // Init format: [host, port, protocol]. The protocol accepts "ws"/"ws:" or "wss"/"wss:".
+  // Init format: [address, protocol]. The protocol accepts "ws"/"ws:" or "wss"/"wss:".
   // Once initialized, all later client messages are forwarded to the socket.
-  if (!socket && Array.isArray(data) && data.length === 3) {
-    connect(data[2], data[0], data[1]);
+  if (!socket && Array.isArray(data) && data.length === 2) {
+    console.log(data)
+    connect(data[1], data[0]);
     return;
   }
 

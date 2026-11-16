@@ -275,15 +275,6 @@ def test_update_server_availability_succeeds_without_client_record(
             (),
             {"last_heartbeat": 202611151234},
         ),
-        (
-            "update_server_availability_heartbeat",
-            "ServerAvailability",
-            (25.5,),
-            {
-                "cpu_usage": 25.5,
-                "last_heartbeat": 202611151234,
-            },
-        ),
     ],
 )
 def test_heartbeat_methods_write_utc_date(
@@ -295,27 +286,13 @@ def test_heartbeat_methods_write_utc_date(
     )
     update = MagicMock()
     monkeypatch.setattr(database, "__update__", update)
-    if collection == "TranscriptionJobs":
-        monkeypatch.setattr(
-            database,
-            "get_transcription_job",
-            lambda record_id: TranscriptionJobsDTO(
-                "record-1", "user-1", "server-1", int(expected_date)
-            ),
-        )
-    else:
-        monkeypatch.setattr(
-            database,
-            "get_server_availability",
-            lambda record_id: ServerAvailabilityDTO(
-                "server-1",
-                "192.0.2.1:443",
-                False,
-                True,
-                method_args[0],
-                int(expected_date),
-            ),
-        )
+    monkeypatch.setattr(
+        database,
+        "get_transcription_job",
+        lambda record_id: TranscriptionJobsDTO(
+            "record-1", "user-1", "server-1", int(expected_date)
+        ),
+    )
 
     result = getattr(database, method_name)("record-1", *method_args)
 
@@ -326,8 +303,77 @@ def test_heartbeat_methods_write_utc_date(
         "record-1",
         expected_changes,
     )
-    if collection == "ServerAvailability":
-        assert result[1].cpu_usage == method_args[0]
+
+
+def test_server_heartbeat_updates_existing_client_record(database, monkeypatch):
+    expected_heartbeat = 202611151234
+    data = ServerAvailabilityDTO(
+        "server-1", "192.0.2.1:443", False, True, 25.5
+    )
+    stored_server = ServerAvailabilityDTO(
+        "server-1", "192.0.2.1:443", False, True, 25.5, expected_heartbeat
+    )
+    monkeypatch.setattr(
+        database, "__current_heartbeat__", lambda: expected_heartbeat
+    )
+    update = MagicMock()
+    monkeypatch.setattr(database, "__update__", update)
+    monkeypatch.setattr(
+        database, "get_server_availability", lambda _server_id: stored_server
+    )
+    client_reference = MagicMock()
+    client_reference.get.return_value = {"server_id": "server-1"}
+    monkeypatch.setattr(
+        database,
+        "__reference__",
+        lambda collection, record_id: client_reference,
+    )
+
+    result = database.update_server_availability_heartbeat(data)
+
+    assert result == (True, stored_server)
+    update.assert_called_once_with(
+        "ServerAvailability",
+        "server-1",
+        {"cpu_usage": 25.5, "last_heartbeat": expected_heartbeat},
+    )
+    client_reference.update.assert_called_once_with(
+        {
+            "server_id": "server-1",
+            "server_address": "192.0.2.1:443",
+            "tls": True,
+            "cpu_usage": 25.5,
+        }
+    )
+    client_reference.set.assert_not_called()
+
+
+def test_server_heartbeat_creates_missing_client_record(database, monkeypatch):
+    data = ServerAvailabilityDTO(
+        "server-1", "192.0.2.1:443", False, True, 25.5
+    )
+    monkeypatch.setattr(database, "__update__", MagicMock())
+    monkeypatch.setattr(database, "get_server_availability", lambda _server_id: data)
+    client_reference = MagicMock()
+    client_reference.get.return_value = None
+    monkeypatch.setattr(
+        database,
+        "__reference__",
+        lambda collection, record_id: client_reference,
+    )
+
+    result = database.update_server_availability_heartbeat(data)
+
+    assert result == (True, data)
+    client_reference.set.assert_called_once_with(
+        {
+            "server_id": "server-1",
+            "server_address": "192.0.2.1:443",
+            "tls": True,
+            "cpu_usage": 25.5,
+        }
+    )
+    client_reference.update.assert_not_called()
 
 
 def test_create_server_availability_returns_failure_for_duplicate(database, monkeypatch):
