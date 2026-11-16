@@ -6,7 +6,8 @@
       ".indexOn": [
         "server_id",
         "server_address",
-        "tls"
+        "tls",
+        "cpu_usage"
       ],
       "$serverAddress": {
         "server_id": {
@@ -23,6 +24,11 @@
           ".read": "auth != null",
           ".write": false,
           ".validate": "newData.isBoolean()"
+        },
+        "cpu_usage": {
+          ".read": false,
+          ".write": false,
+          ".validate": "newData.isNumber()"
         }
       }
     },
@@ -53,11 +59,6 @@
           ".validate": "newData.isBoolean()"
         },
         "cpu_usage": {
-          ".read": false,
-          ".write": false,
-          ".validate": "newData.isNumber()"
-        },
-        "ram_usage": {
           ".read": false,
           ".write": false,
           ".validate": "newData.isNumber()"

@@ -4,9 +4,9 @@ import queue
 import ssl
 import threading
 import time
-from time import monotonic
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
+from time import monotonic
 
 from websockets.asyncio.server import ServerConnection, serve
 
@@ -99,6 +99,9 @@ def load_balancing(flag:threading.Event):
         if monotonic() - start_time > (60 * 5):
             start_time = monotonic()
             load_balancer.delete_expired_items()
+            
+            if loaded_config["general"]["load_balancer"]:
+                load_balancer.sort_servers_by_cpu()
 
 
 async def cert_management():
@@ -352,7 +355,7 @@ async def main():
         
         
         
-        data = ServerAvailabilityDTO(server_id=server_id, server_address=server_address, load_balancer=load_balancer, tls=tls, cpu_usage=0, ram_usage=0)
+        data = ServerAvailabilityDTO(server_id=server_id, server_address=server_address, load_balancer=load_balancer, tls=tls, cpu_usage=0)
         load_balancer = LoadBalancer(database_url=database_url, max_transcription_jobs_per_user=max_transcription_jobs, firebase_app=auth.get_app())
         is_successful, message = load_balancer.update_cpu_and_ram_metrics(server_id=server_id, data=data)
         

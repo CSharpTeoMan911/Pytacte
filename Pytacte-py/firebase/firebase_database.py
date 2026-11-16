@@ -51,7 +51,6 @@ class ServerAvailabilityDTO:
     load_balancer: bool
     tls: bool
     cpu_usage: float
-    ram_usage: float
     last_heartbeat: int | None = None
 
     def __post_init__(self) -> None:
@@ -67,12 +66,7 @@ class ServerAvailabilityDTO:
             self.cpu_usage, (int, float)
         ):
             raise TypeError("cpu_usage must be a number")
-        if isinstance(self.ram_usage, bool) or not isinstance(
-            self.ram_usage, (int, float)
-        ):
-            raise TypeError("ram_usage must be a number")
         self.cpu_usage = float(self.cpu_usage)
-        self.ram_usage = float(self.ram_usage)
         if self.last_heartbeat is not None and (
             isinstance(self.last_heartbeat, bool)
             or not isinstance(self.last_heartbeat, int)
@@ -86,11 +80,42 @@ class ServerAvailabilityDTO:
             "load_balancer": self.load_balancer,
             "tls": self.tls,
             "cpu_usage": self.cpu_usage,
-            "ram_usage": self.ram_usage,
         }
         if self.last_heartbeat is not None:
             record["last_heartbeat"] = self.last_heartbeat
         return record
+
+
+@dataclass
+class ClientAvailablePytacteServersDTO:
+    """DTO for one record in ``Client_Available_Pytacte_Servers``."""
+
+    server_id: str
+    server_address: str
+    tls: bool
+    cpu_usage: float
+
+    def __post_init__(self) -> None:
+        if not self.server_id:
+            raise ValueError("server_id must not be empty")
+        if not self.server_address:
+            raise ValueError("server_address must not be empty")
+        if not isinstance(self.tls, bool):
+            raise TypeError("tls must be a boolean")
+        if isinstance(self.cpu_usage, bool) or not isinstance(
+            self.cpu_usage, (int, float)
+        ):
+            raise TypeError("cpu_usage must be a number")
+
+        self.cpu_usage = float(self.cpu_usage)
+
+    def to_record(self) -> dict[str, str | bool]:
+        return {
+            "server_id": self.server_id,
+            "server_address": self.server_address,
+            "tls": self.tls,
+            "cpu_usage": self.cpu_usage,
+        }
 
 
 class FirebaseDatabase:
@@ -247,6 +272,17 @@ class FirebaseDatabase:
             if reference.get() is not None:
                 return False, f"Server {record.server_id!r} already exists"
             reference.set(record.to_record())
+
+            client_avaliable_severs = ClientAvailablePytacteServersDTO(
+                server_id=record.server_id,
+                server_address=record.server_address,
+                tls=record.tls,
+                cpu_usage=record.cpu_usage,
+            )
+            self.__reference__(
+                "Client_Available_Pytacte_Servers", record.server_id
+            ).set(client_avaliable_severs.to_record())
+
             return True, record
         except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
             return False, f"Failed to create server availability record: {error}"
@@ -272,22 +308,109 @@ class FirebaseDatabase:
             return None
         return self.__record_to_server_availability_dto__(next(iter(records.values())))
 
+    def sort_severs_by_least_cpu_usage(self):
+        # -------------------------------------------------------------------------------
+        # Copy all items from 'ServerAvailability' to 'Client_Available_Pytacte_Servers'
+        # -------------------------------------------------------------------------------
+
+        items_count = 0
+        last_id = None
+
+        while True:
+            items = (
+                db.reference(
+                    "/ServerAvailability",
+                    app=self.firebase_app,
+                    url=self.database_url,
+                )
+                .order_by_key()
+                .limit_to_first(20)
+                .get()
+                if last_id is None
+                else db.reference(
+                    "/ServerAvailability",
+                    app=self.firebase_app,
+                    url=self.database_url,
+                )
+                .order_by_key()
+                .start_at(last_id)
+                .limit_to_first(20)
+                .get()
+            )
+
+            if not isinstance(items, Mapping) or not items:
+                break
+
+            items_to_be_copied = iter(items.items())
+
+            _last_id = None
+            try:
+                while True:
+                    server_id, record = next(items_to_be_copied)
+                    _last_id = server_id
+                    
+                    if server_id == last_id:
+                        continue
+
+                    try:
+                        self.__reference__(
+                            "Client_Available_Pytacte_Servers", server_id
+                        ).set(record)
+                    except FirebaseError, ValueError:
+                        pass
+                    items_count += 1
+            except StopIteration:
+                pass
+
+            if _last_id == last_id:
+                break
+            else:
+                last_id = _last_id
+
+        # ---------------------------------------------
+
+        limit = items_count / 2
+        while True:
+            items = (
+                db.reference(
+                    "/Client_Available_Pytacte_Servers",
+                    app=self.firebase_app,
+                    url=self.database_url,
+                )
+                .order_by_child("cpu_usage")
+                .limit_to_last(1)
+                .get()
+            )
+
+            if not isinstance(items, Mapping) or not items:
+                break
+
+            server_id, record = next(iter(items.items()))
+            
+            try:
+                self.__reference__(
+                    "Client_Available_Pytacte_Servers", server_id
+                ).delete()
+                limit -= 1
+            except FirebaseError, ValueError:
+                pass
+            
+            if limit == 0:
+                break
+
     def update_server_availability_heartbeat(
-        self, server_id: str, cpu_usage: float, ram_usage: float
+        self, server_id: str, cpu_usage: float
     ) -> tuple[bool, ServerAvailabilityDTO | str]:
         """Update server resource usage and heartbeat, returning its DTO."""
         try:
             self.__validate_record_id__(server_id)
             if isinstance(cpu_usage, bool) or not isinstance(cpu_usage, (int, float)):
                 raise TypeError("cpu_usage must be a number")
-            if isinstance(ram_usage, bool) or not isinstance(ram_usage, (int, float)):
-                raise TypeError("ram_usage must be a number")
             self.__update__(
                 "ServerAvailability",
                 server_id,
                 {
                     "cpu_usage": float(cpu_usage),
-                    "ram_usage": float(ram_usage),
                     "last_heartbeat": self.__current_heartbeat__(),
                 },
             )
@@ -297,6 +420,67 @@ class FirebaseDatabase:
             return True, record
         except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
             return False, f"Failed to update server availability heartbeat: {error}"
+
+    def update_server_availability(
+        self, record: ServerAvailabilityDTO
+    ) -> tuple[bool, ServerAvailabilityDTO | str]:
+        """Update a server record, then synchronize its client-visible entry."""
+        try:
+            if not isinstance(record, ServerAvailabilityDTO):
+                raise TypeError("record must be a ServerAvailabilityDTO")
+            self.__validate_record_id__(record.server_id)
+
+            self.__update__("ServerAvailability", record.server_id, record.to_record())
+
+            client_data = ClientAvailablePytacteServersDTO(
+                server_id=record.server_id,
+                server_address=record.server_address,
+                tls=record.tls,
+                cpu_usage=record.cpu_usage,
+            )
+            try:
+                client_records = (
+                    db.reference(
+                        "/Client_Available_Pytacte_Servers",
+                        app=self.firebase_app,
+                        url=self.database_url,
+                    )
+                    .order_by_child("server_id")
+                    .equal_to(record.server_id)
+                    .get()
+                )
+                if isinstance(client_records, Mapping):
+                    for client_record_id in client_records:
+                        self.__update__(
+                            "Client_Available_Pytacte_Servers",
+                            client_record_id,
+                            client_data.to_record(),
+                        )
+            except (
+                ValueError,
+                TypeError,
+                KeyError,
+                RuntimeError,
+                FirebaseError,
+            ) as error:
+                return (
+                    False,
+                    (
+                        "ServerAvailability was updated, but updating "
+                        "Client_Available_Pytacte_Servers failed: "
+                        f"{error}"
+                    ),
+                )
+
+            updated_record = self.get_server_availability(record.server_id)
+            if updated_record is None:
+                return (
+                    False,
+                    f"Server {record.server_id!r} was updated but could not be read back",
+                )
+            return True, updated_record
+        except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
+            return False, f"Failed to update server availability: {error}"
 
     def delete_server_availability(
         self, server_id: str
@@ -334,21 +518,24 @@ class FirebaseDatabase:
                 )
 
                 if not isinstance(expired_items, Mapping) or not expired_items:
-                   break
-               
+                    break
+
                 expired_items_colection = iter(expired_items.items())
-                
+
                 try:
                     while True:
                         server_id, record = next(expired_items_colection)
                         self.__reference__("ServerAvailability", server_id).delete()
-                        deleted_count += 1    
+                        self.__reference__(
+                            "Client_Available_Pytacte_Servers", server_id
+                        ).delete()
+                        deleted_count += 1
                 except StopIteration:
                     pass
-                    
+
             except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError):
                 pass
-            
+
         return True, f"Deleted {deleted_count} expired server record(s)"
 
     def delete_expired_transcription_jobs(self) -> tuple[bool, str]:
@@ -376,15 +563,21 @@ class FirebaseDatabase:
                     break
 
                 for transcription_id in expired_items:
-                    self.__reference__(
-                        "TranscriptionJobs", transcription_id
-                    ).delete()
+                    self.__reference__("TranscriptionJobs", transcription_id).delete()
                     deleted_count += 1
-            except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
+            except (
+                ValueError,
+                TypeError,
+                KeyError,
+                RuntimeError,
+                FirebaseError,
+            ) as error:
                 return (
                     False,
-                    (f"Failed to delete expired transcription jobs after deleting "
-                    f"{deleted_count}: {error}"),
+                    (
+                        f"Failed to delete expired transcription jobs after deleting "
+                        f"{deleted_count}: {error}"
+                    ),
                 )
 
         return True, f"Deleted {deleted_count} expired transcription job(s)"
@@ -463,15 +656,12 @@ class FirebaseDatabase:
         load_balancer = record.get("load_balancer")
         tls = record.get("tls")
         cpu_usage = record.get("cpu_usage")
-        ram_usage = record.get("ram_usage")
         heartbeat = record.get("last_heartbeat")
         if not isinstance(server_id, str) or not isinstance(server_address, str):
             return None
         if not isinstance(load_balancer, bool) or not isinstance(tls, bool):
             return None
         if isinstance(cpu_usage, bool) or not isinstance(cpu_usage, (int, float)):
-            return None
-        if isinstance(ram_usage, bool) or not isinstance(ram_usage, (int, float)):
             return None
         if heartbeat is not None and (
             isinstance(heartbeat, bool) or not isinstance(heartbeat, int)
@@ -483,7 +673,6 @@ class FirebaseDatabase:
             load_balancer=load_balancer,
             tls=tls,
             cpu_usage=float(cpu_usage),
-            ram_usage=float(ram_usage),
             last_heartbeat=heartbeat,
         )
 

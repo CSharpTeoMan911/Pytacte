@@ -19,33 +19,28 @@ class LoadBalancer:
         )
         psutil.cpu_percent(interval=None)
 
-    def get_cpu_and_ram_metrics(self):
+    def get_cpu_metrics(self) -> float:
         """Return current system-wide CPU and virtual memory usage.
 
         CPU and RAM percentages are in the range 0-100. RAM byte counts use
         the operating system's available system memory information.
         """
-        memory = psutil.virtual_memory()
-        return {
-            "cpu_percent": psutil.cpu_percent(interval=1),
-            "ram_percent": memory.percent,
-        }
+        return psutil.cpu_percent(interval=1)
 
     def update_cpu_and_ram_metrics(
         self, server_id: str, data: ServerAvailabilityDTO
     ) -> tuple[bool, str]:
         """Refresh the cached metrics and return the resulting snapshot."""
-        metrics = self.get_cpu_and_ram_metrics()
+        cpu_usage = self.get_cpu_metrics()
        
-        data.cpu_usage = metrics['cpu_percent']
-        data.ram_usage = metrics['ram_percent']
+        data.cpu_usage = cpu_usage
         
         server_availability: ServerAvailabilityDTO | None = (
             self.database_connection.get_server_availability(server_id=server_id)
         )
         
         if server_availability is not None:
-            is_successful, payload = self.database_connection.update_server_availability_heartbeat(server_id=server_id, cpu_usage=data.cpu_usage, ram_usage=data.ram_usage)
+            is_successful, payload = self.database_connection.update_server_availability_heartbeat(server_id=server_id, cpu_usage=data.cpu_usage)
 
             if not is_successful:
                 return [is_successful, payload]
@@ -63,3 +58,6 @@ class LoadBalancer:
         _is_sucessful, _message = self.database_connection.delete_expired_servers()
             
         return [[is_sucessful, _is_sucessful], [message, _message]]
+    
+    def sort_servers_by_cpu(self):
+        self.database_connection.sort_severs_by_least_cpu_usage()

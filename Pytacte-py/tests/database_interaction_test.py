@@ -9,6 +9,8 @@ Credentials (for example, GOOGLE_APPLICATION_CREDENTIALS).
 """
 
 from datetime import UTC, datetime, timedelta
+from multiprocessing import get_context
+from random import Random
 from uuid import uuid4
 
 import firebase_admin
@@ -17,6 +19,23 @@ from firebase_admin import credentials
 from firebase_admin import db as firebase_db
 
 from firebase.firebase_database import FirebaseDatabase, ServerAvailabilityDTO
+
+
+def _run_server_sort_in_process(database_url):
+    app = firebase_admin.initialize_app(
+        credentials.ApplicationDefault(),
+        options={"databaseURL": database_url},
+        name=f"server-sort-test-{uuid4().hex}",
+    )
+    try:
+        database = FirebaseDatabase(
+            database_url,
+            max_transcription_jobs_per_user=2,
+            firebase_app=app,
+        )
+        database.sort_severs_by_least_cpu_usage()
+    finally:
+        firebase_admin.delete_app(app)
 
 
 @pytest.fixture
@@ -47,12 +66,16 @@ def test_server_and_transcription_job_crud_round_trip(database):
     transcription_id = None
     server_created = False
     cleanup_results = []
+    client_server_reference = firebase_db.reference(
+        f"/Client_Available_Pytacte_Servers/{server_id}",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
     server_data = ServerAvailabilityDTO(
         server_id=server_id,
         server_address="127.0.0.1:1",
         tls=False,
         cpu_usage=0.0,
-        ram_usage=0.0,
         load_balancer=False,
     )
 
@@ -66,6 +89,13 @@ def test_server_and_transcription_job_crud_round_trip(database):
         assert stored_server.server_id == server_id
         assert isinstance(stored_server.last_heartbeat, int)
 
+        stored_client_server = client_server_reference.get()
+        assert stored_client_server is not None
+        assert stored_client_server["server_id"] == server_id
+        assert stored_client_server["server_address"] == server_data.server_address
+        assert stored_client_server["tls"] is server_data.tls
+        assert stored_client_server["cpu_usage"] == server_data.cpu_usage
+
         # Set an older value first so the heartbeat API visibly changes the record.
         firebase_db.reference(
             f"/ServerAvailability/{server_id}",
@@ -74,7 +104,7 @@ def test_server_and_transcription_job_crud_round_trip(database):
         ).update({"last_heartbeat": 20000101})
 
         updated_server = database.update_server_availability_heartbeat(
-            server_id, cpu_usage=31.5, ram_usage=47.25
+            server_id, cpu_usage=31.5
         )
         assert updated_server[0], updated_server[1]
         stored_server = database.get_server_availability(server_id)
@@ -82,7 +112,30 @@ def test_server_and_transcription_job_crud_round_trip(database):
         assert stored_server.last_heartbeat == expected_heartbeat
         assert stored_server.last_heartbeat != 20000101
         assert stored_server.cpu_usage == 31.5
-        assert stored_server.ram_usage == 47.25
+
+        updated_server_data = ServerAvailabilityDTO(
+            server_id=server_id,
+            server_address="127.0.0.1:2",
+            tls=True,
+            cpu_usage=18.75,
+            load_balancer=False,
+            last_heartbeat=stored_server.last_heartbeat,
+        )
+        updated_server_result = database.update_server_availability(
+            updated_server_data
+        )
+        assert updated_server_result[0], updated_server_result[1]
+
+        stored_server = database.get_server_availability(server_id)
+        stored_client_server = client_server_reference.get()
+        assert stored_server is not None
+        assert stored_server.server_address == "127.0.0.1:2"
+        assert stored_server.tls is True
+        assert stored_server.cpu_usage == 18.75
+        assert stored_client_server["server_id"] == server_id
+        assert stored_client_server["server_address"] == "127.0.0.1:2"
+        assert stored_client_server["tls"] is True
+        assert stored_client_server["cpu_usage"] == 18.75
 
         created_job = database.create_transcription_job(user_uid, server_id)
         assert created_job[0], created_job[1]
@@ -106,6 +159,7 @@ def test_server_and_transcription_job_crud_round_trip(database):
             cleanup_results.append(
                 database.delete_transcription_job(transcription_id)
             )
+        client_server_reference.delete()
         if server_created:
             cleanup_results.append(database.delete_server_availability(server_id))
 
@@ -115,6 +169,98 @@ def test_server_and_transcription_job_crud_round_trip(database):
         assert database.get_transcription_job(transcription_id) is None
     if server_created:
         assert database.get_server_availability(server_id) is None
+    assert client_server_reference.get() is None
+
+
+def test_sort_servers_by_least_cpu_usage_keeps_lowest_50(database):
+    random = Random(20261116)
+    distinct_cpu_values = [
+        value / 10000
+        for value in random.sample(range(1, 1_000_001), 90)
+    ]
+    cpu_values = distinct_cpu_values + distinct_cpu_values[:10]
+    random.shuffle(cpu_values)
+    expected_cpu_values = sorted(cpu_values)[:50]
+
+    suffix = uuid4().hex
+    server_ids = [f"sort-test-{suffix}-{index:03d}" for index in range(100)]
+    server_collection = firebase_db.reference(
+        "/ServerAvailability",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+    client_collection = firebase_db.reference(
+        "/Client_Available_Pytacte_Servers",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+
+    existing_servers = server_collection.order_by_key().limit_to_first(1).get()
+    existing_clients = client_collection.order_by_key().limit_to_first(1).get()
+    if existing_servers or existing_clients:
+        pytest.skip(
+            "Run against an empty ServerAvailability and "
+            "Client_Available_Pytacte_Servers database; sorting prunes the client table"
+        )
+
+    test_records = {
+        server_id: {
+            "server_id": server_id,
+            "server_address": f"127.0.0.1:{20000 + index}",
+            "load_balancer": False,
+            "tls": False,
+            "cpu_usage": cpu_values[index],
+            "last_heartbeat": int(datetime.now(UTC).strftime("%Y%m%d%H%M")),
+        }
+        for index, server_id in enumerate(server_ids)
+    }
+
+    try:
+        server_collection.update(test_records)
+
+        seeded_ids = [
+            server_id
+            for server_id in server_ids
+            if server_collection.child(server_id).get() is not None
+        ]
+        assert len(seeded_ids) == 100, (
+            f"Expected to insert 100 test servers, found {len(seeded_ids)}"
+        )
+
+        process = get_context("spawn").Process(
+            target=_run_server_sort_in_process,
+            args=(database.database_url,),
+        )
+        process.start()
+        process.join(timeout=60)
+        if process.is_alive():
+            process.terminate()
+            process.join()
+            pytest.fail(
+                "sort_severs_by_least_cpu_usage did not finish within 60 seconds"
+            )
+        assert process.exitcode == 0, (
+            "sort_severs_by_least_cpu_usage subprocess exited with "
+            f"status {process.exitcode}"
+        )
+
+        actual_client_records = [
+            client_collection.child(server_id).get()
+            for server_id in server_ids
+        ]
+        actual_cpu_values = sorted(
+            record["cpu_usage"]
+            for record in actual_client_records
+            if record is not None
+        )
+        assert len(actual_cpu_values) == 50, (
+            f"Expected 50 test servers in Client_Available_Pytacte_Servers, "
+            f"found {len(actual_cpu_values)}"
+        )
+        assert actual_cpu_values == expected_cpu_values
+    finally:
+        server_collection.update({server_id: None for server_id in server_ids})
+        client_collection.update({server_id: None for server_id in server_ids})
 
 
 def test_delete_expired_servers_removes_expired_and_preserves_fresh(database):
@@ -129,7 +275,6 @@ def test_delete_expired_servers_removes_expired_and_preserves_fresh(database):
             "load_balancer": False,
             "tls": False,
             "cpu_usage": 0.0,
-            "ram_usage": 0.0,
             # Reuse timestamps so duplicate heartbeat values are covered.
             "last_heartbeat": int(
                 (now - timedelta(minutes=6 + index // 4)).strftime(
@@ -146,7 +291,6 @@ def test_delete_expired_servers_removes_expired_and_preserves_fresh(database):
             "load_balancer": False,
             "tls": False,
             "cpu_usage": 0.0,
-            "ram_usage": 0.0,
             "last_heartbeat": int(now.strftime("%Y%m%d%H%M")),
         }
         for index, server_id in enumerate(fresh_server_ids)

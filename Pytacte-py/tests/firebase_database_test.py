@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -82,7 +82,6 @@ def test_get_server_availability_returns_only_the_first_record(database, monkeyp
         "load_balancer": False,
         "tls": True,
         "cpu_usage": 12.5,
-        "ram_usage": 40.0,
         "last_heartbeat": 202611151234,
     }
     reference = MagicMock()
@@ -99,95 +98,6 @@ def test_get_server_availability_returns_only_the_first_record(database, monkeyp
     assert result.server_id == "server-1"
     reference.order_by_key.assert_called_once_with()
     reference.order_by_key.return_value.limit_to_first.assert_called_once_with(1)
-
-
-def test_delete_expired_servers_reads_and_deletes_one_record_at_a_time(
-    database, monkeypatch
-):
-    now = datetime.now(UTC)
-    expired_heartbeat = int(
-        (now - timedelta(minutes=10)).strftime("%Y%m%d%H%M")
-    )
-    expired_records = {
-        f"expired-{index:03d}": {"last_heartbeat": expired_heartbeat}
-        for index in range(100)
-    }
-    fresh_record = {
-        "last_heartbeat": int(now.strftime("%Y%m%d%H%M"))
-    }
-    records = {**expired_records, "fresh-server": fresh_record}
-    query_count = 0
-    deleted_server_ids = []
-
-    class FakeReference:
-        def __init__(self, path):
-            self.path = path
-            self.start_value = None
-            self.end_value = None
-            self.equal_value = None
-            self.result_limit = None
-
-        def order_by_child(self, child_name):
-            assert child_name == "last_heartbeat"
-            return self
-
-        def start_at(self, value):
-            self.start_value = value
-            return self
-
-        def end_at(self, value):
-            self.end_value = value
-            return self
-
-        def equal_to(self, value):
-            self.equal_value = value
-            return self
-
-        def limit_to_first(self, count):
-            self.result_limit = count
-            return self
-
-        def get(self):
-            nonlocal query_count
-            query_count += 1
-            matches = sorted(
-                (
-                    (server_id, record)
-                    for server_id, record in records.items()
-                    if self.equal_value is not None
-                    and record["last_heartbeat"] == self.equal_value
-                    or self.equal_value is None
-                    and (
-                        self.start_value is None
-                        or record["last_heartbeat"] >= self.start_value
-                    )
-                    and (
-                        self.end_value is None
-                        or record["last_heartbeat"] <= self.end_value
-                    )
-                ),
-                key=lambda item: item[1]["last_heartbeat"],
-            )
-            return dict(matches[: self.result_limit])
-
-        def delete(self):
-            server_id = self.path.rsplit("/", maxsplit=1)[-1]
-            deleted_server_ids.append(server_id)
-            records.pop(server_id)
-
-    monkeypatch.setattr(
-        firebase_database.db,
-        "reference",
-        lambda path, **_kwargs: FakeReference(path),
-    )
-
-    result = database.delete_expired_servers()
-
-    assert result == (True, "Deleted 100 expired server record(s)")
-    assert len(deleted_server_ids) == 100
-    assert set(deleted_server_ids) == set(expired_records)
-    assert records == {"fresh-server": fresh_record}
-    assert query_count == 101
 
 
 def test_create_transcription_job_generates_id_and_stores_record(database, monkeypatch):
@@ -241,24 +151,119 @@ def test_create_server_availability_adds_heartbeat(database, monkeypatch):
         server_address="192.0.2.1:443",
         tls=True,
         cpu_usage=12.5,
-        ram_usage=40.0,
         load_balancer=False,
     )
-    reference = MagicMock()
-    reference.get.return_value = None
-    database_reference = MagicMock(return_value=reference)
-    monkeypatch.setattr(database, "__reference__", database_reference)
+    server_reference = MagicMock()
+    server_reference.get.return_value = None
+    client_reference = MagicMock()
+    references = {
+        ("ServerAvailability", "server-1"): server_reference,
+        ("Client_Available_Pytacte_Servers", "server-1"): client_reference,
+    }
+    monkeypatch.setattr(
+        database,
+        "__reference__",
+        lambda collection, record_id: references[(collection, record_id)],
+    )
 
     result = database.create_server_availability(data)
 
     assert result[0] is True
     assert isinstance(result[1], ServerAvailabilityDTO)
-    saved_data = reference.set.call_args.args[0]
+    saved_data = server_reference.set.call_args.args[0]
     assert saved_data["last_heartbeat"] == int(
         datetime.now(UTC).strftime("%Y%m%d%H%M")
     )
+    client_reference.set.assert_called_once_with(
+        {
+            "server_id": "server-1",
+            "server_address": "192.0.2.1:443",
+            "tls": True,
+            "cpu_usage": 12.5,
+        }
+    )
     assert result[1] is data
     assert data.last_heartbeat == saved_data["last_heartbeat"]
+
+
+def test_update_server_availability_syncs_existing_client_record(database, monkeypatch):
+    record = ServerAvailabilityDTO(
+        server_id="server-1",
+        server_address="192.0.2.2:443",
+        tls=True,
+        cpu_usage=15.75,
+        load_balancer=False,
+        last_heartbeat=202611151234,
+    )
+    query = MagicMock()
+    query.order_by_child.return_value.equal_to.return_value.get.return_value = {
+        "server-1": {
+            "server_id": "server-1",
+            "server_address": "192.0.2.1:443",
+            "tls": False,
+            "cpu_usage": 12.5,
+        }
+    }
+    monkeypatch.setattr(firebase_database.db, "reference", lambda *_args, **_kwargs: query)
+    update_calls = []
+    monkeypatch.setattr(
+        database,
+        "__update__",
+        lambda collection, record_id, changes: update_calls.append(
+            (collection, record_id, changes)
+        ),
+    )
+    monkeypatch.setattr(database, "get_server_availability", lambda _server_id: record)
+
+    result = database.update_server_availability(record)
+
+    assert result == (True, record)
+    assert [call[0] for call in update_calls] == [
+        "ServerAvailability",
+        "Client_Available_Pytacte_Servers",
+    ]
+    assert update_calls[0] == (
+        "ServerAvailability",
+        "server-1",
+        record.to_record(),
+    )
+    assert update_calls[1] == (
+        "Client_Available_Pytacte_Servers",
+        "server-1",
+        {
+            "server_id": "server-1",
+            "server_address": "192.0.2.2:443",
+            "tls": True,
+            "cpu_usage": 15.75,
+        },
+    )
+    query.order_by_child.assert_called_once_with("server_id")
+    query.order_by_child.return_value.equal_to.assert_called_once_with("server-1")
+
+
+def test_update_server_availability_succeeds_without_client_record(
+    database, monkeypatch
+):
+    record = ServerAvailabilityDTO(
+        server_id="server-1",
+        server_address="192.0.2.2:443",
+        tls=True,
+        cpu_usage=15.75,
+        load_balancer=False,
+    )
+    query = MagicMock()
+    query.order_by_child.return_value.equal_to.return_value.get.return_value = None
+    monkeypatch.setattr(firebase_database.db, "reference", lambda *_args, **_kwargs: query)
+    update = MagicMock()
+    monkeypatch.setattr(database, "__update__", update)
+    monkeypatch.setattr(database, "get_server_availability", lambda _server_id: record)
+
+    result = database.update_server_availability(record)
+
+    assert result == (True, record)
+    update.assert_called_once_with(
+        "ServerAvailability", "server-1", record.to_record()
+    )
 
 
 @pytest.mark.parametrize(
@@ -273,10 +278,9 @@ def test_create_server_availability_adds_heartbeat(database, monkeypatch):
         (
             "update_server_availability_heartbeat",
             "ServerAvailability",
-            (25.5, 64.0),
+            (25.5,),
             {
                 "cpu_usage": 25.5,
-                "ram_usage": 64.0,
                 "last_heartbeat": 202611151234,
             },
         ),
@@ -309,7 +313,6 @@ def test_heartbeat_methods_write_utc_date(
                 False,
                 True,
                 method_args[0],
-                method_args[1],
                 int(expected_date),
             ),
         )
@@ -325,7 +328,6 @@ def test_heartbeat_methods_write_utc_date(
     )
     if collection == "ServerAvailability":
         assert result[1].cpu_usage == method_args[0]
-        assert result[1].ram_usage == method_args[1]
 
 
 def test_create_server_availability_returns_failure_for_duplicate(database, monkeypatch):
@@ -337,7 +339,6 @@ def test_create_server_availability_returns_failure_for_duplicate(database, monk
         server_address="192.0.2.1:443",
         tls=True,
         cpu_usage=12.5,
-        ram_usage=40.0,
         load_balancer=False,
     )
 
