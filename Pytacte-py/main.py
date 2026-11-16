@@ -21,7 +21,7 @@ from utils.IpRateLimiter import RateLimiter
 AUTH_CHECKUP_TIME: float = 5  # 5 seconds timeout
 FILE_NAME = "server_config.json"
 
-start_time = monotonic()
+start_time = 0.0
 
 flag = threading.Event()
 
@@ -99,9 +99,7 @@ def load_balancing(flag:threading.Event):
         if monotonic() - start_time > (60 * 5):
             start_time = monotonic()
             load_balancer.delete_expired_items()
-            
-            if loaded_config["general"]["load_balancer"]:
-                load_balancer.sort_servers_by_cpu()
+            load_balancer.sort_servers_by_cpu()
 
 
 async def cert_management():
@@ -319,6 +317,9 @@ async def echo(websocket: ServerConnection):
     except Exception as e:  # noqa: BLE001, F841, S110
         print(e)
         pass
+    
+    except KeyboardInterrupt:
+        ASR_FLAG.set()
 
     finally:
         ASR_FLAG.set()
@@ -326,10 +327,12 @@ async def echo(websocket: ServerConnection):
 
 async def main():
     try:
-        print("--> [ Loading server configuration ]")
-        
         global load_balancer
         global loaded_config
+        global start_time
+        
+        print("--> [ Loading server configuration ]")
+    
         loaded_config = initiate_config()
         
 
@@ -363,8 +366,10 @@ async def main():
             raise ValueError(f"( Please add a valid firebase database url ) ( {message} )")
         else:
             print("--> [ Load balancer initialised ]")
-            
-        thread_pool.submit(load_balancing)
+        
+        if loaded_config["general"]["load_balancer"]:
+            start_time = monotonic()
+            thread_pool.submit(load_balancing, flag=flag)
         
         
         
@@ -415,6 +420,7 @@ async def main():
     except Exception as e:
         print(f"--> [Error: {e}]")
         raise
+    
     finally:
         pass
 
@@ -423,4 +429,5 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
+        flag.set()
         os.close(0)
