@@ -12,6 +12,7 @@ import IconButton from '@mui/material/IconButton'
 import CircularProgress from '@mui/material/CircularProgress'
 import MicOffIcon from '@mui/icons-material/MicOff'
 import MicIcon from '@mui/icons-material/Mic'
+import SettingsIcon from '@mui/icons-material/Settings'
 import OpenInFull from '@mui/icons-material/OpenInFull'
 import CloseFullscreen from '@mui/icons-material/CloseFullscreen'
 import SaveIcon from '@mui/icons-material/Save';
@@ -115,6 +116,7 @@ function Home() {
   const [authReady, setAuthReady] = useState<boolean>(false);
   const [muteAudio, setMuteAudio] = useState<boolean>(false);
   const [messageExchangePending, setMessageExchangePending] = useState<boolean>(false);
+  const [mobileSettingsOpen, setMobileSettingsOpen] = useState<boolean>(false);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [modelPanelHeight, setModelPanelHeight] = useState<number>();
   const modelPanelRef = useRef<HTMLDivElement>(null);
@@ -817,8 +819,66 @@ function Home() {
           </div>
         </div>}
         mobileChildren={
-          <div>
-            Mobile Content
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', minHeight: 'calc(100dvh - 128px)', boxSizing: 'border-box', padding: '12px' }}>
+            <div style={{ display: 'flex', flexDirection:'row', justifyContent:'end', alignItems: 'center', minHeight: '44px' }}>
+              <IconButton aria-label={mobileSettingsOpen ? 'Close model settings' : 'Open model settings'} color='primary' onClick={() => { setMobileSettingsOpen(!mobileSettingsOpen) }} sx={{ color: '#38a3e0', minWidth: '44px', minHeight: '44px' }}>
+                <SettingsIcon />
+              </IconButton>
+            </div>
+
+            {mobileSettingsOpen && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px', borderRadius: '12px', backgroundColor: '#003b5f', textAlign: 'left', boxShadow: '1px 0px 10px #54b9f3',}}>
+                <CustomSelectionField label='Model' size='small' minWidth='80%' menuBackgroundColor='#003b5f' textColor='#78bee7' borderColor='#0876b5' menuContents={['Nemo CTC Critinet 512', 'Nemo CTC Conformer Large', 'Nemo Parakeet TDT-CTC 110M']} enabled={modelSelectionEnabled} onChange={setCurrentModel} />
+                <CustomSelectionField label='Model Precision' size='small' minWidth='80%' menuBackgroundColor='#003b5f' textColor='#78bee7' borderColor='#0876b5' menuContents={currentModel === 'Nemo Parakeet TDT-CTC 110M' ? ['Quantised 8'] : ['Quantised 8', 'Floating-Point 32']} enabled={precisionSelectionEnabled} onChange={setCurrentPrecision} />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 'min(52vh, 420px)', minWidth: 0, overflow: 'hidden', borderRadius: '16px', backgroundColor: '#003b5f', boxShadow: '1px 0px 10px #54b9f3', textAlign: 'left' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '12px 12px 8px' }}>
+                <div/>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: muteAudio ? '#9be3b0' : '#c3d7e3', fontFamily: 'Roboto Mono, monospace', fontSize: '0.7rem' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: messageExchangePending ? '#55c779' : '#8ca8b7' }} />
+                  {messageExchangePending ? 'LIVE' : 'READY'}
+                </div>
+              </div>
+              <Divider sx={{ margin: '0 12px', borderColor: '#f8f8f8', opacity: 0.45 }} />
+              <Typography sx={{ margin: '10px 12px 0', color: '#d7e8f1', fontFamily: '"Tiny5 Duo", sans-serif', fontSize: '15px' }}>
+                {initLabel}
+              </Typography>
+              <CodeMirror
+                id='transcription_container'
+                readOnly={true}
+                aria-label='Transcription'
+                value={transcriptionValue}
+                extensions={transcriptionEditorExtensions}
+                basicSetup={{ lineNumbers: false, foldGutter: false, highlightActiveLine: false, highlightActiveLineGutter: false }}
+                theme='none'
+                height='100%'
+                maxHeight='100%'
+                style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0, flex: '1 1 0', marginTop: '8px', marginBottom: '8px', overflow: 'hidden' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minHeight: '64px' }}>
+              <IconButton aria-label={muteAudio ? 'Stop microphone' : 'Start microphone'} color='primary' onClick={() => {
+                const nextMuteAudio = !muteAudio;
+                setMessageExchangePending(nextMuteAudio);
+                setMuteAudio(nextMuteAudio);
+              }} sx={{ width: '56px', height: '56px', flex: '0 0 56px', color: '#fff', backgroundColor: '#0989d3', '&:hover': { backgroundColor: '#0876b5' } }}>
+                {messageExchangePending ? <CircularProgress size={24} sx={{ color: '#fff' }} /> : muteAudio ? <MicOffIcon /> : <MicIcon />}
+              </IconButton>
+              <div style={{ display: 'flex', alignItems: 'center', flex: '1 1 auto', minWidth: 0, height: '48px', overflow: 'hidden', padding: '0 8px', borderRadius: '12px', background: 'linear-gradient(to left top, #00558a, #003b5f)' }}>
+                {muteAudio ? <LiveWaveformVisualiser stream={audioStream} /> : <Typography sx={{ color: '#d7e8f1', fontSize: '0.8rem' }}>Tap the mic to begin</Typography>}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <IconButton aria-label='Clear transcription' color='primary' onClick={() => { setClearTranscription(true) }} sx={{ color: '#38a3e0', minWidth: '44px', minHeight: '44px' }}>
+                  <RestartAltIcon />
+                </IconButton>
+                <IconButton aria-label='Save transcription' color='primary' onClick={() => { setSaveDocument(true) }} sx={{ color: '#38a3e0', minWidth: '44px', minHeight: '44px' }}>
+                  <SaveIcon />
+                </IconButton>
+              </div>
+            </div>
           </div>} />
     </RootPanel>
   )

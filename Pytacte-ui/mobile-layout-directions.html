@@ -1,0 +1,60 @@
+<div id="pytacte-mobile-directions" class="viz-carousel viz-dotted-background" aria-label="Pytacte mobile layout directions">
+  <section data-variant="Transcript first" aria-label="Transcript first mobile layout">
+    <style>
+      #pytacte-mobile-directions .phone { max-width: 360px; min-height: 610px; margin: 10px auto; padding: 18px; color: light-dark(#17364a,#e4edf2); background: light-dark(#f5f8fa,#111b22); border: 1px solid light-dark(#ccd8df,#35434c); border-radius: 28px; font: 14px/1.45 system-ui,sans-serif; box-shadow: 0 12px 32px #0002; display:flex; flex-direction:column; gap:14px; }
+      #pytacte-mobile-directions .top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+      #pytacte-mobile-directions .brand { font: 700 19px/1.1 'Roboto Mono',monospace; letter-spacing:-.06em; color:light-dark(#003b5f,#73c5f4); }
+      #pytacte-mobile-directions .model { padding:7px 10px; border-radius:999px; background:light-dark(#e5eef3,#1c2b35); color:light-dark(#315368,#c3d7e3); font-size:12px; }
+      #pytacte-mobile-directions .transcript { flex:1; min-height:285px; padding:16px; border-radius:18px; background:light-dark(#003b5f,#092c42); color:#f5f8fa; display:flex; flex-direction:column; gap:12px; }
+      #pytacte-mobile-directions .transcript small { opacity:.72; font:12px 'Roboto Mono',monospace; }
+      #pytacte-mobile-directions .copy { font:16px/1.6 'Roboto Mono',monospace; }
+      #pytacte-mobile-directions .copy .dim { opacity:.55; }
+      #pytacte-mobile-directions .bottom { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+      #pytacte-mobile-directions .mic { width:58px; height:58px; border:0; border-radius:50%; background:#0989d3; color:white; display:grid; place-items:center; box-shadow:0 5px 16px #0989d355; }
+      #pytacte-mobile-directions .mic i { display:flex; }
+      #pytacte-mobile-directions .wave { flex:1; height:42px; border-radius:12px; background:light-dark(#e5eef3,#1c2b35); display:flex; align-items:center; justify-content:center; gap:4px; }
+      #pytacte-mobile-directions .wave b { width:3px; border-radius:5px; background:#0989d3; height:10px; }
+      #pytacte-mobile-directions .wave b:nth-child(2n) {height:22px} #pytacte-mobile-directions .wave b:nth-child(3n) {height:31px}
+      #pytacte-mobile-directions .tool { width:42px;height:42px;border:0;border-radius:13px;background:transparent;color:inherit;display:grid;place-items:center; }
+      #pytacte-mobile-directions .hint { color:light-dark(#527184,#9bb1bd); font-size:12px; }
+    </style>
+    <div class="phone">
+      <div class="top"><div class="brand">pytacte<span style="color:#0989d3">.</span></div><div class="model">Parakeet TDT · 8-bit⌄</div></div>
+      <div class="transcript"><small>LIVE TRANSCRIPT <span style="float:right">00:18</span></small><div class="copy">The next train to London will depart from platform four. <span class="dim">Please mind the gap between the train and the platform…</span></div></div>
+      <div class="bottom"><button class="mic" aria-label="Stop transcription"><i data-lucide="mic" aria-hidden="true"></i></button><div style="flex:1"><div class="wave" aria-label="Audio level"> <b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div><div class="hint" style="margin:5px 4px 0">Listening · tap to pause</div></div><button class="tool" aria-label="More options"><i data-lucide="ellipsis" aria-hidden="true"></i></button></div>
+    </div>
+  </section>
+  <section data-variant="Setup drawer" aria-label="Setup drawer mobile layout" hidden>
+    <style>
+      #pytacte-mobile-directions .drawer-layout { max-width:360px; min-height:610px; margin:10px auto; padding:18px; border-radius:28px; color:light-dark(#17364a,#e4edf2); background:light-dark(#f5f8fa,#111b22); border:1px solid light-dark(#ccd8df,#35434c); font:14px/1.45 system-ui,sans-serif; box-shadow:0 12px 32px #0002; display:flex; flex-direction:column; gap:14px; }
+      #pytacte-mobile-directions .drawer-head {display:flex;justify-content:space-between;align-items:center}.drawer-title{font:700 19px 'Roboto Mono',monospace;color:light-dark(#003b5f,#73c5f4)}
+      #pytacte-mobile-directions .settings {padding:13px 14px;border-radius:16px;background:light-dark(#e8f0f4,#1a2932);display:flex;flex-direction:column;gap:10px}
+      #pytacte-mobile-directions .select-line {display:flex;justify-content:space-between;gap:12px;align-items:center;color:light-dark(#547184,#adc2cd);font-size:12px}
+      #pytacte-mobile-directions .select-line strong{font-size:13px;color:light-dark(#17364a,#e4edf2);font-weight:550}
+      #pytacte-mobile-directions .screen {flex:1;min-height:230px;padding:16px;border-radius:18px;background:light-dark(#003b5f,#092c42);color:#f5f8fa;display:flex;flex-direction:column;gap:12px}
+      #pytacte-mobile-directions .screen small{font:12px 'Roboto Mono',monospace;opacity:.72}.screen-copy{font:16px/1.6 'Roboto Mono',monospace}
+      #pytacte-mobile-directions .control-row{display:flex;align-items:center;gap:12px}.action{flex:1;min-height:52px;border:0;border-radius:15px;background:#0989d3;color:#fff;font-weight:650;display:flex;justify-content:center;align-items:center;gap:9px}.quiet-action{width:48px;height:48px;border:0;border-radius:14px;color:inherit;background:light-dark(#e8f0f4,#1a2932);display:grid;place-items:center}
+    </style>
+    <div class="drawer-layout">
+      <div class="drawer-head"><div class="drawer-title">pytacte<span style="color:#0989d3">.</span></div><button class="quiet-action" aria-label="Settings"><i data-lucide="sliders-horizontal" aria-hidden="true"></i></button></div>
+      <div class="settings"><div class="select-line"><span>MODEL</span><strong>Parakeet TDT-CTC 110M ⌄</strong></div><div class="select-line"><span>PRECISION</span><strong>Quantised 8 ⌄</strong></div></div>
+      <div class="screen"><small>TRANSCRIPT</small><div class="screen-copy">Your words appear here as you speak. Ready when you are.</div></div>
+      <div class="control-row"><button class="action"><i data-lucide="mic" aria-hidden="true"></i>Start transcribing</button><button class="quiet-action" aria-label="Clear transcript"><i data-lucide="rotate-ccw" aria-hidden="true"></i></button></div>
+    </div>
+  </section>
+  <section data-variant="Focused dictation" aria-label="Focused dictation mobile layout" hidden>
+    <style>
+      #pytacte-mobile-directions .focus-layout{max-width:360px;min-height:610px;margin:10px auto;padding:20px;border-radius:28px;color:light-dark(#17364a,#e4edf2);background:light-dark(#f5f8fa,#111b22);border:1px solid light-dark(#ccd8df,#35434c);font:14px/1.45 system-ui,sans-serif;box-shadow:0 12px 32px #0002;display:flex;flex-direction:column;gap:16px}
+      #pytacte-mobile-directions .focus-top{display:flex;align-items:center;justify-content:space-between}.focus-brand{font:700 19px 'Roboto Mono',monospace;color:light-dark(#003b5f,#73c5f4)}.state{display:flex;align-items:center;gap:7px;color:light-dark(#3d7957,#9cdbaf);font-size:12px}.dot{width:8px;height:8px;border-radius:50%;background:#49aa6d}
+      #pytacte-mobile-directions .focus-text{flex:1;padding:20px 2px;font:20px/1.7 'Roboto Mono',monospace;letter-spacing:-.035em;color:light-dark(#123e59,#e8f1f5)}
+      #pytacte-mobile-directions .focus-text .faded{color:light-dark(#91a5b0,#59717e)}
+      #pytacte-mobile-directions .focus-footer{border-top:1px solid light-dark(#d7e1e7,#2d3d47);padding-top:14px;display:flex;align-items:center;justify-content:space-between;gap:10px}.focus-mic{height:58px;padding:0 19px;border:0;border-radius:999px;background:#0989d3;color:#fff;display:flex;align-items:center;gap:9px;font-weight:650}.focus-tools{display:flex;gap:4px}.focus-tool{width:42px;height:42px;border:0;border-radius:12px;background:transparent;color:inherit;display:grid;place-items:center}.focus-meta{font-size:12px;color:light-dark(#527184,#9bb1bd)}
+    </style>
+    <div class="focus-layout">
+      <div class="focus-top"><div class="focus-brand">pytacte<span style="color:#0989d3">.</span></div><div class="state"><span class="dot"></span>Listening · 00:18</div></div>
+      <div class="focus-meta">Parakeet TDT · Quantised 8</div>
+      <div class="focus-text">The next train to London will depart from platform four. <span class="faded">Please mind the gap between the train and the platform…</span></div>
+      <div class="focus-footer"><button class="focus-mic"><i data-lucide="mic-off" aria-hidden="true"></i>Pause</button><div class="focus-tools"><button class="focus-tool" aria-label="Clear transcript"><i data-lucide="rotate-ccw" aria-hidden="true"></i></button><button class="focus-tool" aria-label="Save transcript"><i data-lucide="download" aria-hidden="true"></i></button><button class="focus-tool" aria-label="Settings"><i data-lucide="settings-2" aria-hidden="true"></i></button></div></div>
+    </div>
+  </section>
+</div>
