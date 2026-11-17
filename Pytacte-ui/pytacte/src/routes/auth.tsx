@@ -31,7 +31,7 @@ async function handleAuthentication(isGoogleLogIn: boolean, email: string, passw
         if (status) {
             const registrationMessage = `${message}. Check your email to verify your account. Check your spam folder if needed.`;
             setNotificationText(registrationMessage);
-            setNotificationType('success');
+            setNotificationType('info');
             setIsRegistering?.(false);
         } else {
             setNotificationText(message);

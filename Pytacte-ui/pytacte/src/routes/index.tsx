@@ -9,6 +9,7 @@ import CustomSelectionField from '#/components/CustomSelectionField'
 import Typography from '@mui/material/Typography'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
+import CircularProgress from '@mui/material/CircularProgress'
 import MicOffIcon from '@mui/icons-material/MicOff'
 import MicIcon from '@mui/icons-material/Mic'
 import OpenInFull from '@mui/icons-material/OpenInFull'
@@ -102,6 +103,7 @@ function Home() {
   const webSocketStreamingRef = useRef<Worker | undefined>(undefined);
 
   const shutdownRequestedRef = useRef(false);
+  const streamingFailureHandledRef = useRef(false);
   const webWorkerInit = useRef<boolean>(false);
 
   const jwtValidatationProcedureInitiated = useRef<boolean>(false);
@@ -112,6 +114,7 @@ function Home() {
 
   const [authReady, setAuthReady] = useState<boolean>(false);
   const [muteAudio, setMuteAudio] = useState<boolean>(false);
+  const [messageExchangePending, setMessageExchangePending] = useState<boolean>(false);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [modelPanelHeight, setModelPanelHeight] = useState<number>();
   const modelPanelRef = useRef<HTMLDivElement>(null);
@@ -154,6 +157,19 @@ function Home() {
     if (jwtValidated.current && modelParamatersValidated.current) {
       webSocketStreamingRef.current?.postMessage(bytes);
     }
+  }
+
+  function handleStreamingFailure(message: string) {
+    if (streamingFailureHandledRef.current) {
+      return;
+    }
+
+    streamingFailureHandledRef.current = true;
+    setMessageExchangePending(false);
+    setNotificationType('error');
+    setNotificationText(message);
+    setNotificationOpen(true);
+    void StopCapture();
   }
 
   function initTranscriptionPanelExpansionAnimation() {
@@ -211,7 +227,9 @@ function Home() {
   }
 
   function isSymbol(char: string): boolean {
-    return /^\p{S}$/u.test(char);
+    // Treat punctuation as terminal characters too. `\p{S}` only matches
+    // Unicode symbols and misses `.`, `!`, `?`, quotes, and other punctuation.
+    return /^[\p{P}\p{S}]$/u.test(char);
   }
 
 
@@ -256,6 +274,21 @@ function Home() {
             return;
           }
 
+
+          const statusMessage = String(payload);
+
+          if (statusMessage.includes('[ WebSocket error:') ||
+            statusMessage.includes('[ WebSocket setup error:') ||
+            statusMessage.includes('[ WebSocket send error:') ||
+            statusMessage.includes('[ WebSocket not initialized;') ||
+            statusMessage.includes('[ WebSocket is still connecting;')) {
+            handleStreamingFailure('Unable to communicate with the server.');
+          }
+
+          if (statusMessage.startsWith('[ Socket closed:') && !shutdownRequestedRef.current) {
+            handleStreamingFailure('The connection to the server was closed.');
+          }
+
           if (String(payload).includes('[ Socket connected to: ')) {
             webWorkerInit.current = true;
 
@@ -268,6 +301,11 @@ function Home() {
                   jwtValidatationProcedureInitiated.current = true;
                 }
                 else {
+                  setMessageExchangePending(false);
+                  setNotificationType('error');
+                  setNotificationText('Authentication session invalid');
+                  setNotificationOpen(true);
+                  StopCapture();
                 }
               });
             }
@@ -285,42 +323,53 @@ function Home() {
               }
             }
             else {
-              console.log(payload);
               switch (payload) {
                 case "<JWT_Invalid/>":
+                  setMessageExchangePending(false);
                   setNotificationType('error');
                   setNotificationText('Invalid log in session.');
                   setNotificationOpen(true);
+                  StopCapture();
                   break;
 
                 case "<JWT_Token_Expired/>":
+                  setMessageExchangePending(false);
                   setNotificationType('error');
                   setNotificationText('Log in session expired.');
                   setNotificationOpen(true);
+                  StopCapture();
                   break;
 
                 case "<JWT_Token_Revoked/>":
+                  setMessageExchangePending(false);
                   setNotificationType('error');
                   setNotificationText('Log in session revoked.');
                   setNotificationOpen(true);
+                  StopCapture();
                   break;
 
                 case "<Invalid_Account/>":
+                  setMessageExchangePending(false);
                   setNotificationType('error');
                   setNotificationText('Invalid user account.');
                   setNotificationOpen(true);
+                  StopCapture();
                   break;
 
                 case "<Invalid_Message/>":
+                  setMessageExchangePending(false);
                   setNotificationType('error');
                   setNotificationText('Invalid message format.');
                   setNotificationOpen(true);
+                  StopCapture();
                   break
 
                 case "<Internal_Server_Error/>":
+                  setMessageExchangePending(false);
                   setNotificationType('error');
                   setNotificationText('Internal server error.');
                   setNotificationOpen(true);
+                  StopCapture();
                   break;
               }
             }
@@ -330,17 +379,20 @@ function Home() {
 
               if (payload === '<Valid_Model_Parameters/>') {
                 modelParamatersValidated.current = true;
+                setMessageExchangePending(false);
               }
               else if (payload === '<Invalid_Model_Parameters/>') {
+                setMessageExchangePending(false);
                 setNotificationType('error');
                 setNotificationText('Invalid model name or model precision.');
                 setNotificationOpen(true);
+                StopCapture();
               }
             }
             else {
-              const _message = String(payload);
+              const _message = String(payload).trim();
 
-              if (_message.trim() !== '') {
+              if (_message !== '') {
                 const terminator = isSymbol(_message[_message.length - 1]) ? '' : '.';
                 const message = `${_message[0].toUpperCase()}${_message.slice(1, _message.length)}${terminator} `;
                 transcription.current += message;
@@ -354,6 +406,11 @@ function Home() {
 
       webSocketStreaming.onerror = (event: ErrorEvent) => {
         console.error('Streaming worker error:', event.message);
+        handleStreamingFailure('The streaming connection failed.');
+        shutdownRequestedRef.current = true;
+        webSocketStreaming.terminate();
+        setWebSocketStreaming(undefined);
+        webSocketStreamingRef.current = undefined;
       };
     }
 
@@ -372,8 +429,11 @@ function Home() {
           webSocketStreamingRef.current = webSocketStreaming;
         }
         else {
-          console.log(result.payload)
+          handleStreamingFailure('Unable to find an available server.');
         }
+      }).catch((error) => {
+        console.error('Unable to find an available server:', error);
+        handleStreamingFailure('Unable to find an available server.');
       });
     }
     else {
@@ -398,6 +458,7 @@ function Home() {
 
 
   function InitCapture() {
+    streamingFailureHandledRef.current = false;
     StartLiveAudioCapture(StreamAudioToServer, setAudioStream).then(([message, isSuccessful]: [string, boolean]) => {
       console.log('InitCapture message:', message);
       console.log('InitCapture status:', isSuccessful);
@@ -411,6 +472,13 @@ function Home() {
           setWebSocketStreaming(new Worker(new URL("../utils/WebSocketWorker.js", import.meta.url)));
         }
       }
+      else {
+        setMessageExchangePending(false);
+        setNotificationType('error');
+        setNotificationText(message || 'Unable to start audio capture.');
+        setNotificationOpen(true);
+        setMuteAudio(false);
+      }
 
     });
   }
@@ -421,6 +489,7 @@ function Home() {
     console.log('StopCapture status:', isSuccessful);
 
     if (isSuccessful) {
+      setMessageExchangePending(false);
       setAudioStream(null);
       if (isSuccessful) {
         setMuteAudio(false);
@@ -434,6 +503,12 @@ function Home() {
           webSocketStreaming.postMessage('<Shutdown/>');
         }
       }
+    }
+    else {
+      setMessageExchangePending(false);
+      setMuteAudio(false);
+      setModelSelectionEnabled(true);
+      setPrecisionSelectionEnabled(true);
     }
   }
 
@@ -626,11 +701,17 @@ function Home() {
                     <div style={{ height: '100%', width: '1px', backgroundColor: '#003b5f' }} />
                   </div>
                   <div style={{ textAlign: 'center', display: 'flex', justifyContent: 'center', flexDirection: 'column', background: 'linear-gradient(to left top, #dadada, #aaa7a7)', borderRadius: '0px 10px 10px 0px' }}>
-                    <IconButton aria-label="Microphone off" color="primary" onClick={() => { setMuteAudio(!muteAudio) }} sx={{
+                    <IconButton aria-label="Microphone off" color="primary" onClick={() => {
+                      const nextMuteAudio = !muteAudio;
+                      setMessageExchangePending(nextMuteAudio);
+                      setMuteAudio(nextMuteAudio);
+                    }} sx={{
                       alignSelf: 'center'
                     }}>
                       {
-                        muteAudio ? <MicOffIcon /> : <MicIcon />
+                        messageExchangePending
+                          ? <CircularProgress size={24} />
+                          : muteAudio ? <MicOffIcon /> : <MicIcon />
                       }
                     </IconButton>
                   </div>

@@ -100,6 +100,9 @@ export async function loginAccount(email: string, password: string): Promise<com
         else if (error_message.includes('invalid-credential')) {
             return [false, "Invalid email and/or password"]
         }
+        else if(error_message.includes('too-many-requests')){
+            return [false, "Email is not verified"]
+        }
         else {
             return [false, error_message]
         }
@@ -145,7 +148,7 @@ export async function logoutAccount(): Promise<compositeResult> {
 export async function getIfUserLoggedIn(): Promise<boolean> {
     await persistenceReady;
     await auth.authStateReady();
-    return auth.currentUser !== null;
+    return auth.currentUser !== null && auth.currentUser.emailVerified;
 }
 
 

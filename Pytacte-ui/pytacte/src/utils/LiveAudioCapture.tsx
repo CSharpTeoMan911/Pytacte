@@ -45,6 +45,7 @@ export function StopAudioCapture(): [string, boolean] {
     try {
         //mediaRecorder?.removeEventListener('dataavailable', eventListener, true);
         mic?.stop();
+        mediaStream?.getTracks().forEach((track) => track.stop());
 
         mic = undefined;
         mediaStream = undefined;

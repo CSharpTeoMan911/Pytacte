@@ -27,7 +27,7 @@ flag = threading.Event()
 
 thread_pool = ThreadPoolExecutor()
 
-config = Config(use_encryption=True)
+config = Config(encrypt_stream=True)
 
 auth = FirebaseAuth()
 ip_rate_limiter = RateLimiter()
@@ -96,48 +96,47 @@ def initiate_config() -> object:
 def load_balancing(flag: threading.Event):
     global start_time
 
-    prev_time:int = 0
-    heartbeat_period:int = 30
-    load_balancing_period:int =  60 * 2
-    
+    prev_time: int = 0
+    heartbeat_period: int = 30
+    load_balancing_period: int = 60 * 2
+
     while not flag.is_set():
         current_time = int(monotonic() - start_time)
-        
+
         if current_time % heartbeat_period == 0 and prev_time != current_time:
             server_id: str = loaded_config["general"]["server_id"]
             server_address = loaded_config["general"]["address"]
-            is_load_balancer = loaded_config["general"]["load_balancer"]
-            tls = loaded_config["security"]["use_encryption"]
+            is_load_balancer_node = loaded_config["general"]["is_load_balancer_node"]
+            tls = loaded_config["security"]["tls"]
 
             data = ServerAvailabilityDTO(
                 server_id=server_id,
                 server_address=server_address,
-                load_balancer=is_load_balancer,
+                load_balancer=is_load_balancer_node,
                 tls=tls,
                 cpu_usage=0,
             )
 
             load_balancer.update_cpu_and_ram_metrics(server_id=server_id, data=data)
-        
+
         if (
             current_time > 0
             and current_time % load_balancing_period == 0
             and prev_time != current_time
-            and loaded_config["general"]["load_balancer"]
+            and loaded_config["general"]["is_load_balancer_node"]
         ):
-            
             load_balancer.delete_expired_items()
             load_balancer.sort_servers_by_cpu()
-            
+
             start_time = monotonic()
             prev_time = 0
-            
+
         prev_time = current_time
 
 
 async def cert_management():
     try:
-        if loaded_config["security"]["use_encryption"]:
+        if loaded_config["security"]["encrypt_stream"]:
             crypto = RSA_Crypto()
             server_cert_path = Path(
                 Path.cwd(), "data", loaded_config["security"]["server_cert"]
@@ -385,13 +384,13 @@ async def main():
 
         server_id = loaded_config["general"]["server_id"]
         server_address = loaded_config["general"]["address"]
-        load_balancer = loaded_config["general"]["load_balancer"]
-        tls = loaded_config["security"]["use_encryption"]
+        is_load_balancer_node = loaded_config["general"]["is_load_balancer_node"]
+        tls = loaded_config["security"]["tls"]
 
         data = ServerAvailabilityDTO(
             server_id=server_id,
             server_address=server_address,
-            load_balancer=load_balancer,
+            load_balancer=is_load_balancer_node,
             tls=tls,
             cpu_usage=0,
         )
@@ -418,10 +417,7 @@ async def main():
         IP = loaded_config["general"]["ip_address"]
         PORT = loaded_config["general"]["port_number"]
 
-        if (
-            loaded_config["security"]["use_encryption"]
-            and not loaded_config["security"]["reverse_proxy"]
-        ):
+        if loaded_config["security"]["encrypt_stream"]:
             crypto = RSA_Crypto()
             private_cert_path = Path(
                 Path.cwd(), "data", loaded_config["security"]["server_cert"]

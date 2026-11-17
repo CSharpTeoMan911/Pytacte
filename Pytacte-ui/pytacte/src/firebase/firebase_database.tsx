@@ -14,7 +14,6 @@ export async function getAvailableServer(): Promise<ReturnValue> {
     const availableServersQuery: Query = query(availableServersReference, orderByChild('cpu_usage'), limitToFirst(1))
     
     console.log(availableServersQuery)
-    console.log("!!! get !!!")
     const availableServerSnapshot: DataSnapshot = await get(availableServersQuery);
 
     const availableServer: Record<string, unknown> | unknown[] | string | number | boolean | null = availableServerSnapshot.val() as Record<string, unknown> | unknown[] | string | number | boolean | null;
@@ -33,8 +32,6 @@ export async function getAvailableServer(): Promise<ReturnValue> {
                 const serverRecord = serverData as Record<string, unknown>;
                 const address: string | null = serverRecord["server_address"] as string;
                 const protocol: string | null = serverRecord["tls"] ? 'wss' : 'ws';
-
-                console.log(serverRecord)
 
                 return address && protocol ? { isSucessful: true, payload: [address, protocol] } : { isSucessful: false, payload: 'No server is available' } as ReturnValue;
             }

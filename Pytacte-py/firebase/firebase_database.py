@@ -415,14 +415,8 @@ class FirebaseDatabase:
             self.__validate_record_id__(data.server_id)
             if isinstance(data.cpu_usage, bool) or not isinstance(data.cpu_usage, (int, float)):
                 raise TypeError("cpu_usage must be a number")
-            self.__update__(
-                "ServerAvailability",
-                data.server_id,
-                {
-                    "cpu_usage": float(data.cpu_usage),
-                    "last_heartbeat": self.__current_heartbeat__(),
-                },
-            )
+            data.last_heartbeat = self.__current_heartbeat__()
+            self.__update__("ServerAvailability", data.server_id, data.to_record())
 
             record = self.get_server_availability(data.server_id)
             if record is None:
