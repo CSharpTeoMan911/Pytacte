@@ -145,12 +145,13 @@ export default function CustomAppBar({ appBarTextColor, appBarSecondaryTextColor
               sx={{
                 display: { xs: 'block', md: 'none' },
                 '& .MuiPaper-root': { backgroundColor: appBarColor },
+                '& .MuiMenu-list': { paddingTop: 0, paddingBottom: 0 },
               }}
             >
               {pages.map((page) => (
 
                 <MenuItem key={page[0]} onClick={() => handleButtonClick(page)} sx={{ color: appBarTextColor }}>
-                  <Typography sx={{ textAlign: 'center', color: page[0] === window.location.pathname ? appBarSecondaryTextColor : appBarTextColor, fontFamily: 'Roboto Mono, monospace', fontWeight: 400, letterSpacing: '.05rem', fontSize: '0.800rem' }}>{page[1]}</Typography>
+                  <Typography sx={{ textAlign: 'center', color: page[0] === window.location.pathname ? appBarSecondaryTextColor : appBarTextColor, fontFamily: 'Roboto Mono, monospace', fontWeight: 400, letterSpacing: '.05rem', fontSize: '0.9rem' }}>{page[1]}</Typography>
                 </MenuItem>
               ))}
             </Menu>}

@@ -636,7 +636,7 @@ function Home() {
         logoHeight="50px"
         appBarTextColor="#003b5f"
         appBarColor="#f8f8f8"
-        appBarSecondaryTextColor="#0989d3"
+        appBarSecondaryTextColor="#0a70ac"
         authButtonTextColor="#003b5f"
         routesInfo={[
           ['/', 'Transcription'],
