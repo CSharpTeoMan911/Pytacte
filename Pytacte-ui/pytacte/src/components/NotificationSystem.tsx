@@ -40,9 +40,8 @@ export default function NotificationSystem({
         const timeout = window.setTimeout(() => {
             setOpenState?.(false);
             onCloseCallback?.();
+            window.clearTimeout(timeout);
         }, timeoutSeconds * 1000);
-
-        return () => window.clearTimeout(timeout);
     }, [openState, timeoutSeconds, setOpenState, onCloseCallback]);
 
     const NotificationIcon = notificationIcons[notificationType];
