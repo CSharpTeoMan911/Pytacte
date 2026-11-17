@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "pytacte"
-  }
+    "default": "pytacte",
+    "pyctate": "pytacte"
+  },
+  "targets": {},
+  "etags": {}
 }

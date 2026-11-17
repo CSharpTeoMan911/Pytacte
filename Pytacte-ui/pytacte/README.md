@@ -1,194 +1,64 @@
-Welcome to your new TanStack Start app!
+# Pytacte frontend
 
-# Getting Started
+The frontend is in the `Pytacte-ui/pytacte` directory of the repository. Its dependencies are declared in `package.json`, and `package-lock.json` is committed so npm can install the same dependency versions after cloning.
 
-To run this application:
+Before following these steps, install [Node.js](https://nodejs.org/) 20.19+ (or 22.12+).
+
+## Initialising Firebase cloud services
+
+The app uses **Firebase Authentication** for user sign-in, **Firebase Realtime Database** to retrieve transcription server details, and **Firebase Hosting** to publish the frontend. The repository already contains the Firebase CLI project configuration; each developer must connect it to their own Firebase project and generate their Web App configuration.
+
+### Setting up the Firebase console
+
+1) Create a Firebase project in the Firebase Console.
+
+<img src='./src/data/firebase_init_1.jpg' width=500/>
+<br/>
+<img src='./src/data/firebase_init_2.jpg' width=500/>
+
+<br/>
+<br/>
+
+2) Register a **Web App** inside that Firebase project. From the project overview, select the Web icon (`</>`), enter **Pytacte** as the app nickname, and register it. Creating the project and registering its Web App are separate steps. The frontend needs the Web App SDK configuration at `src/data/firebase_config.json`; step 6 generates this file for your project.
+
+3) Enable the app's **Authentication providers**. In the Firebase Console, open **Authentication → Sign-in method** and enable **Email/Password** and **Google**. Use your own support email for Google Sign-In. These providers are also declared in `firebase.json`, and the deployment in step 6 applies that configuration to your project, so keep the console settings and file in sync.
+
+4) Create a **Realtime Database** for the project. In the Firebase Console, open **Databases & Storage → Realtime Database**, select **Create database**, and choose a database location. The repository's `database.rules.json` will be deployed in step 6, so review those rules before deployment.
+
+5) The cloned repository is already initialised for Firebase: it includes `firebase.json`, `.firebaserc`, and the Realtime Database rules. **Do not run `firebase init` in this clone**; reinitialising a selected service can replace its existing configuration with defaults.
+
+6) Install the **firebase-tools** package with npm, sign in, select the Firebase **project** (not the Web App), generate the Web App config, build the frontend, and deploy. Before deploying, change the `supportEmail` under `auth.providers.googleSignIn` in `firebase.json` to the same support email you used in step 3. When `firebase use --add` asks for an alias, choose `dev`, then activate it with `firebase use dev`. The SDK config command selects the only Web App automatically; if there are multiple Web Apps, the CLI prompts you to choose one—select **Pytacte**.
 
 ```bash
-npm install
+cd Pytacte-ui/pytacte
+npm install -g firebase-tools
+firebase login
+firebase use --add
+firebase apps:sdkconfig WEB --out src/data/firebase_config.json
+npm ci
+npm run build
+firebase deploy
+```
+
+`firebase deploy` deploys all configured Firebase resources in this project: Hosting, Authentication provider settings, and Realtime Database rules. The rules in `database.rules.json` replace the rules currently published in the Firebase console, so review that file before deploying.
+<br/>
+<br/>
+
+## Install and run
+
+Then, from the repository root, run:
+
+```bash
+cd Pytacte-ui/pytacte
+npm ci
 npm run dev
 ```
 
-# Building For Production
+`npm ci` installs the frontend dependencies from the lockfile. To add or update a dependency, run `npm install <package>` in this directory and commit both `package.json` and `package-lock.json`.
 
-To build this application for production:
+The development server is available at `http://localhost:3000`.
 
-```bash
-npm run build
-```
+## Enable the transcription service
 
-## Styling
+Go in the backend application located in the ```Pytacte/pytacte-py``` folder and follow the configuration in the 'README.md' file to enable the backend for transcription.
 
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
-
-### Removing Tailwind CSS
-
-If you prefer not to use Tailwind CSS:
-
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Remove `@tailwindcss/vite` and `tailwindcss` from `package.json`
-
-## Linting & Formatting
-
-
-This project uses [eslint](https://eslint.org/) and [prettier](https://prettier.io/) for linting and formatting. Eslint is configured using [tanstack/eslint-config](https://tanstack.com/config/latest/docs/eslint). The following scripts are available:
-
-```bash
-npm run lint
-npm run format
-npm run check
-```
-
-
-
-## Routing
-
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
-
-### Adding A Route
-
-To add a new route to your application just add a new file in the `./src/routes` directory.
-
-TanStack will automatically generate the content of the route file for you.
-
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
-
-```tsx
-import { Link } from "@tanstack/react-router";
-```
-
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'My App' },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-})
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from '@tanstack/react-start'
-
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState('')
-  
-  useEffect(() => {
-    getServerTime().then(setTime)
-  }, [])
-  
-  return <div>Server time: {time}</div>
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { json } from '@tanstack/react-start'
-
-export const Route = createFileRoute('/api/hello')({
-  server: {
-    handlers: {
-      GET: () => json({ message: 'Hello, World!' }),
-    },
-  },
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
