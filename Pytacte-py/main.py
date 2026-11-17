@@ -11,7 +11,11 @@ from time import monotonic
 from websockets.asyncio.server import ServerConnection, serve
 
 from firebase.firebase_auth import FirebaseAuth
-from firebase.firebase_database import ServerAvailabilityDTO
+from firebase.firebase_database import (
+    FirebaseDatabase,
+    ServerAvailabilityDTO,
+    TranscriptionJobsDTO,
+)
 from server.load_balancer import LoadBalancer
 from server.transcription_service import SpeechToTextInterface, TrasncriptionResult
 from utils.ConfigManager import Config
@@ -20,6 +24,8 @@ from utils.IpRateLimiter import RateLimiter
 
 AUTH_CHECKUP_TIME: float = 5  # 5 seconds timeout
 FILE_NAME = "server_config.json"
+
+database:FirebaseDatabase | None = None
 
 start_time = 0.0
 
@@ -182,8 +188,29 @@ async def cert_management():
         raise
 
 
+async def transciption_session_heartbeat_manager(transcription_id:str, websocket:ServerConnection):
+    is_succcessful, payload = database.update_transcription_job_heartbeat(
+        transcription_id=transcription_id
+    )
+    
+    if not is_succcessful:
+        websocket.respond(403, "<Internal_Server_Error/>")
+        await websocket.close()
+        
+        
+def heartbeat_manager_wrapper(coroutine):
+    return asyncio.run(coroutine)
+    
+    
+    
+
+
 async def echo(websocket: ServerConnection):
     client_ip: str | None
+
+    transcription_id: str | None
+    
+    last_heartbeat = monotonic() 
 
     if not loaded_config["security"]["reverse_proxy"]:
         client_ip = websocket.remote_address[0]
@@ -274,8 +301,49 @@ async def echo(websocket: ServerConnection):
                                     )
 
                         else:
-                            await websocket.send(message="<JWT_Valid/>", text=True)
-                            jwt_checked = True
+                            if isinstance(jwt_validation_message, object) and database is not None:
+                                uid = jwt_validation_message["uid"]
+                                server_id = loaded_config["general"]["server_id"]
+
+                                if jwt_validation_message["uid"]:
+                                    [is_successful, payload] = (
+                                        database.create_transcription_job(
+                                            user_uid=uid, server_id=server_id
+                                        )
+                                    )
+
+                                    if not is_successful:
+                                        if (
+                                            "User has reached the maximum number of transcription jobs "
+                                            in payload
+                                        ):
+                                            await websocket.send(
+                                                message="<Max_Transcriptions_Limit_Reached/>",
+                                                text=True,
+                                            )
+                                        else:
+                                            await websocket.send(
+                                                message="<Internal_Server_Error/>",
+                                                text=True,
+                                            )
+                                    else:
+                                        if isinstance(payload.transcription_id, str):
+                                            transcription_id = payload.transcription_id
+                                            
+                                            await websocket.send(message="<JWT_Valid/>", text=True)
+                                            
+                                            jwt_checked = True
+                                        else:
+                                            await websocket.send(
+                                                message="<Internal_Server_Error/>",
+                                                text=True,
+                                            )
+
+                            else:
+                                await websocket.send(
+                                    message="<Internal_Server_Error/>",
+                                    text=True,
+                                )
 
                 elif not stt_ai_model_paramaters_extracted and isinstance(message, str):
                     if model_label in message and model_label_end in message:
@@ -327,9 +395,16 @@ async def echo(websocket: ServerConnection):
                             await websocket.close()
 
                 else:
+                    elapsed = monotonic() - last_heartbeat
+                    
                     if isinstance(message, bytes) and isinstance(
                         model, SpeechToTextInterface
-                    ):
+                    ) and database is not None:
+                        
+                        if elapsed > 60:
+                            thread_pool.submit(heartbeat_manager_wrapper, transciption_session_heartbeat_manager(transcription_id=transcription_id, websocket=websocket))
+                            last_heartbeat = monotonic()
+
                         model.add_audio_chunk(
                             audio_chunk=message, audio_queue=audio_queue
                         )
@@ -340,14 +415,14 @@ async def echo(websocket: ServerConnection):
                             )
                         recognition_result.result = ""
                     else:
-                        pass
+                        websocket.respond(403, "<Invalid_Message/>")
+                        await websocket.close()
 
             except ValueError as ve:
                 print(f"--> [ Error: {ve} ]")
 
     except Exception as e:  # noqa: BLE001, F841, S110
         print(e)
-        pass
 
     except KeyboardInterrupt:
         ASR_FLAG.set()
@@ -361,7 +436,8 @@ async def main():
         global load_balancer
         global loaded_config
         global start_time
-
+        global database
+        
         print("--> [ Loading server configuration ]")
 
         loaded_config = initiate_config()
@@ -402,7 +478,6 @@ async def main():
         is_successful, message = load_balancer.update_cpu_and_ram_metrics(
             server_id=server_id, data=data
         )
-        print(is_successful, message)
 
         if not is_successful:
             raise ValueError(
@@ -410,6 +485,13 @@ async def main():
             )
         else:
             print("--> [ Load balancer initialised ]")
+            
+            
+        print("--> [ Initialising database ]")
+        
+        database = FirebaseDatabase(database_url=database_url, max_transcription_jobs_per_user=max_transcription_jobs, firebase_app=auth.get_app())
+        
+        print("--> [ Database initialised ]")
 
         start_time = monotonic()
         thread_pool.submit(load_balancing, flag=flag)
@@ -417,7 +499,10 @@ async def main():
         IP = loaded_config["general"]["ip_address"]
         PORT = loaded_config["general"]["port_number"]
 
-        if loaded_config["security"]["encrypt_stream"]:
+        if (
+            loaded_config["security"]["encrypt_stream"]
+            and not loaded_config["security"]["reverse_proxy"]
+        ):
             crypto = RSA_Crypto()
             private_cert_path = Path(
                 Path.cwd(), "data", loaded_config["security"]["server_cert"]

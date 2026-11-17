@@ -636,17 +636,56 @@ class FirebaseDatabase:
         reference.update(dict(changes))
         return reference.get()
 
-    def __count_transcription_jobs_for_user__(self, user_uid: str) -> int:
-        jobs = db.reference(
-            "/TranscriptionJobs", app=self.firebase_app, url=self.database_url
-        ).get()
-        if not isinstance(jobs, Mapping):
-            return 0
-        return sum(
-            1
-            for job in jobs.values()
-            if isinstance(job, Mapping) and job.get("uuid") == user_uid
-        )
+    def __count_transcription_jobs_for_user__(self, user_uid: str) -> int: 
+        items_count = 0
+        last_id = None
+
+        while True:
+            items = (
+                db.reference(
+                    "/TranscriptionJobs",
+                    app=self.firebase_app,
+                    url=self.database_url,
+                )
+                .order_by_key()
+                .limit_to_first(20)
+                .get()
+                if last_id is None
+                else db.reference(
+                    "/TranscriptionJobs",
+                    app=self.firebase_app,
+                    url=self.database_url,
+                )
+                .order_by_key()
+                .start_at(last_id)
+                .limit_to_first(20)
+                .get()
+            )
+
+            if not isinstance(items, Mapping) or not items:
+                break
+
+            items_to_be_copied = iter(items.items())
+
+            _last_id = None
+            try:
+                while True:
+                    server_id, record = next(items_to_be_copied)
+                    _last_id = server_id
+                    
+                    if server_id == last_id:
+                        continue
+                    
+                    items_count += 1
+            except StopIteration:
+                pass
+
+            if _last_id == last_id:
+                break
+            else:
+                last_id = _last_id
+        
+        return items_count
 
     def __current_heartbeat__(self) -> int:
         return int(datetime.now(UTC).strftime("%Y%m%d%H%M"))

@@ -66,6 +66,7 @@ class FirebaseAuth:
         try:
             result = auth.verify_id_token(id_token=token, check_revoked=True)
             
+            
             if result['email_verified'] is False:
                 self.__remove_id_token__(result['user_id'])
                 return [False, 'Email not verified']

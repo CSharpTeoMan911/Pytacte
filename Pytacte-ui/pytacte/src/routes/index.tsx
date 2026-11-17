@@ -366,6 +366,14 @@ function Home() {
                   StopCapture();
                   break
 
+                case "<Max_Transcriptions_Limit_Reached/>":
+                  setMessageExchangePending(false);
+                  setNotificationType('error');
+                  setNotificationText('Maxium number of transcriptions limit reached');
+                  setNotificationOpen(true);
+                  StopCapture();
+                  break;
+
                 case "<Internal_Server_Error/>":
                   setMessageExchangePending(false);
                   setNotificationType('error');
