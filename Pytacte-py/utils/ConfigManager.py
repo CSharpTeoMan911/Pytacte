@@ -25,7 +25,6 @@ class Config:
         max_transcription_jobs_per_user: int = 10,
         reverse_proxy:bool = False,
         is_load_balancer_node:bool = True,
-        audio_stream_byte_rate_per_second:int = 80000,
         database_url:str = "REPLACE_WITH_FIREBASE_YOUR_DATABASE_URL",
         server_id:str = "server_1"
     ):
@@ -35,7 +34,6 @@ class Config:
                 "port_number": port_number,
                 "address":address,
                 "is_load_balancer_node": is_load_balancer_node,
-                "audio_stream_byte_rate_per_second":audio_stream_byte_rate_per_second,
                 "database_url":database_url,
                 "server_id":server_id
             },

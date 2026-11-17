@@ -355,10 +355,6 @@ balancing tasks, such as removing expired server records and ordering available
 servers by CPU usage. For a deployment with multiple server instances, enable
 this on **only one instance**.
 
-**`audio_stream_byte_rate_per_second`** sets how many bytes a client can send per
-second on the audio stream. The bytes are queued through a leaky bucket and sent
-to the transcription pipeline.
-
 **`database_url`** is the Firebase Realtime Database URL used by the application.
 
 **`server_id`** is the required identifier for this server instance.
