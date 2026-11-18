@@ -67,7 +67,7 @@ export const Route = createFileRoute('/')({ component: Home })
 
 
 function Home() {
-
+  
   const targetInitMarker = '>>>';
   const targetInitLabel = ' init pytacte';
 
@@ -125,8 +125,12 @@ function Home() {
   const model = useRef<string>('');
   const precision = useRef<string>('');
 
-  const [currentModel, setCurrentModel] = useState<string>('');
-  const [currentPrecision, setCurrentPrecision] = useState<string>('');
+  const availableModels:string[] = ['Nemo CTC Critinet 512', 'Nemo CTC Conformer Large', 'Nemo Parakeet TDT-CTC 110M']
+  const [currentModel, setCurrentModel] = useState<string>(availableModels[0]);
+
+  const availablePrecisions:string[] = ['Quantised 8', 'Floating-Point 32']
+  const minAvailablePrecisions:string[] = ['Quantised 8']
+  const [currentPrecision, setCurrentPrecision] = useState<string>(availablePrecisions[0]);
 
   const [modelSelectionEnabled, setModelSelectionEnabled] = useState(true);
   const [precisionSelectionEnabled, setPrecisionSelectionEnabled] = useState(true);
@@ -673,7 +677,7 @@ function Home() {
                   <Typography sx={{ marginLeft: '10px', color: '#003b5f', fontFamily: 'Roboto Mono, monospace', marginBottom: '10px' }} variant='h6'>
                     // Select STT Model
                   </Typography>
-                  <CustomSelectionField label='Model' size='medium' minWidth='80%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={['Nemo CTC Critinet 512', 'Nemo CTC Conformer Large', 'Nemo Parakeet TDT-CTC 110M']} enabled={modelSelectionEnabled} onChange={setCurrentModel} />
+                  <CustomSelectionField label='Model' size='medium' minWidth='80%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={availableModels} enabled={modelSelectionEnabled} onChange={setCurrentModel} />
                 </div>
                 <Divider sx={{
                   margin: '20px 0px 20px 0px',
@@ -683,7 +687,7 @@ function Home() {
                   <Typography sx={{ marginLeft: '10px', color: '#003b5f', fontFamily: 'Roboto Mono, monospace', marginBottom: '10px' }} variant='h6'>
                     // Select model precision
                   </Typography>
-                  <CustomSelectionField label='Model Precision' minWidth='40%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={currentModel === 'Nemo Parakeet TDT-CTC 110M' ? ['Quantised 8'] : ['Quantised 8', 'Floating-Point 32']} enabled={precisionSelectionEnabled} onChange={setCurrentPrecision} />
+                  <CustomSelectionField label='Model Precision' minWidth='40%' menuBackgroundColor='#eeebeb' textColor='#003b5f' borderColor='#003b5f' menuContents={currentModel === 'Nemo Parakeet TDT-CTC 110M' ? minAvailablePrecisions : availablePrecisions} enabled={precisionSelectionEnabled} onChange={setCurrentPrecision} />
                 </div>
                 <Divider sx={{
                   margin: '20px 0px 20px 0px',

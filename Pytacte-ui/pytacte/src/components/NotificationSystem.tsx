@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined';
 import CloseIcon from '@mui/icons-material/Close';
 import ErrorOutlinedIcon from '@mui/icons-material/ErrorOutlined';
@@ -34,14 +34,25 @@ export default function NotificationSystem({
     onCloseCallback,
     timeoutSeconds = 5,
 }: Props) {
+
+
+    const [timeout, setTimeout] = useState<NodeJS.Timeout | undefined>(undefined);
+    const [hydrated, setHydrated] = useState<boolean>(false);
+
     useEffect(() => {
         if (!openState || timeoutSeconds <= 0) return;
 
-        const timeout = window.setTimeout(() => {
-            setOpenState?.(false);
-            onCloseCallback?.();
-            window.clearTimeout(timeout);
-        }, timeoutSeconds * 1000);
+        if (!hydrated) {
+        console.log("Hydration")
+            setTimeout(setInterval(() => {
+                setOpenState?.(false);
+                onCloseCallback?.();
+                clearInterval(timeout);
+            }, timeoutSeconds * 1000));
+            setHydrated(true);
+        }
+
+
     }, [openState, timeoutSeconds, setOpenState, onCloseCallback]);
 
     const NotificationIcon = notificationIcons[notificationType];
