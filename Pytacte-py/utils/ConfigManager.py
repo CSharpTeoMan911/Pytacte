@@ -26,7 +26,8 @@ class Config:
         reverse_proxy:bool = False,
         is_load_balancer_node:bool = True,
         database_url:str = "REPLACE_WITH_FIREBASE_YOUR_DATABASE_URL",
-        server_id:str = "server_1"
+        server_id:str = "server_1",
+        is_dev:bool = True
     ):
         self.config = {
             "general": {
@@ -52,6 +53,9 @@ class Config:
             "firebase": {
                 "firebase_key_name":'KEY_NAME'
             },
+            "caddy_reverse_proxy":{
+                "is_dev":is_dev
+            }
         }
 
     def __delete_config_file__(self, file_name):

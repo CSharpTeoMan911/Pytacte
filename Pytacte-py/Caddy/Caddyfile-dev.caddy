@@ -1,8 +1,0 @@
-{
-    local_certs
-}
-
-localhost:8443 {
-    tls internal
-    reverse_proxy 127.0.0.1:5000
-}

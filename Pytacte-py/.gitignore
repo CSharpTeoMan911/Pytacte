@@ -9,3 +9,4 @@ __pycache__
 server_config.json
 */models/*
 pytacte-firebase-adminsdk*.json
+Caddy/*
