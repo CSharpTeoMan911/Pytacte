@@ -1,5 +1,6 @@
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
@@ -7,6 +8,45 @@ import requests
 
 from server import caddy_manager
 from server.caddy_manager import CaddyManager
+
+
+def manager_for(caddy_folder: Path) -> CaddyManager:
+    manager = CaddyManager()
+    manager.caddy_folder = caddy_folder
+    return manager
+
+
+class FakeProcess:
+    def __init__(
+        self,
+        pid=1234,
+        *,
+        timeout_on_wait=False,
+        stdout_output="",
+        stderr_output="",
+    ):
+        self.pid = pid
+        self.returncode = None
+        self.timeout_on_wait = timeout_on_wait
+        self.terminated = False
+        self.killed = False
+        self.stdout = StringIO(stdout_output)
+        self.stderr = StringIO(stderr_output)
+
+    def poll(self):
+        return self.returncode
+
+    def terminate(self):
+        self.terminated = True
+
+    def wait(self, timeout=None):
+        if self.timeout_on_wait and not self.killed:
+            raise caddy_manager.subprocess.TimeoutExpired("caddy-server", timeout)
+        self.returncode = 0
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
 
 
 def make_archive(binary_name: str, contents: bytes = b"fake caddy executable") -> bytes:
@@ -18,9 +58,20 @@ def make_archive(binary_name: str, contents: bytes = b"fake caddy executable") -
 
 
 class FakeResponse:
-    def __init__(self, body: bytes, error: Exception | None = None):
+    def __init__(
+        self,
+        body: bytes,
+        error: Exception | None = None,
+        filename: str | None = "caddy_windows_amd64.exe",
+    ):
         self.body = body
         self.error = error
+        self.headers = (
+            {"Content-Disposition": f'attachment; filename="{filename}"'}
+            if filename
+            else {}
+        )
+        self.iter_content_calls = 0
 
     def __enter__(self):
         return self
@@ -33,15 +84,38 @@ class FakeResponse:
             raise self.error
 
     def iter_content(self, chunk_size):
+        self.iter_content_calls += 1
         yield self.body
+
+
+@pytest.fixture(autouse=True)
+def mock_download_metadata_and_get(monkeypatch):
+    def fake_head(_url, **kwargs):
+        parameters = dict(kwargs["params"])
+        extension = ".exe" if parameters["os"] == "windows" else ""
+        return FakeResponse(
+            b"metadata only",
+            filename=f"caddy_{parameters['os']}_{parameters['arch']}{extension}",
+        )
+
+    def fake_get(_url, **kwargs):
+        parameters = dict(kwargs["params"])
+        return FakeResponse(
+            make_archive("caddy.exe" if parameters["os"] == "windows" else "caddy"),
+            filename=f"caddy_{parameters['os']}_{parameters['arch']}"
+            f"{'.exe' if parameters['os'] == 'windows' else ''}",
+        )
+
+    monkeypatch.setattr(requests, "head", fake_head)
+    monkeypatch.setattr(requests, "get", fake_get)
 
 
 @pytest.mark.parametrize(
     ("is_dev", "expected_name"),
     [(True, CaddyManager.DEV_CONFIG_NAME), (False, CaddyManager.PROD_CONFIG_NAME)],
 )
-def test_set_config_selects_config_and_records_path(tmp_path, is_dev, expected_name):
-    manager = CaddyManager(tmp_path)
+def test_set_config_selects_and_records_path(tmp_path, is_dev, expected_name):
+    manager = manager_for(tmp_path)
     dev_config = tmp_path / CaddyManager.DEV_CONFIG_NAME
     prod_config = tmp_path / CaddyManager.PROD_CONFIG_NAME
     dev_config.write_text("dev", encoding="utf-8")
@@ -49,38 +123,226 @@ def test_set_config_selects_config_and_records_path(tmp_path, is_dev, expected_n
 
     selected = manager.set_config(is_dev)
 
-    assert selected == tmp_path / expected_name
-    assert manager.config_path == selected
+    expected_path = tmp_path / expected_name
+    assert selected == (True, str(expected_path))
+    assert manager.config_path == expected_path
 
 
-def test_set_config_produces_both_configs_when_folder_is_empty(tmp_path):
-    manager = CaddyManager(tmp_path / "Caddy")
+def test_set_config_produces_both_configs_when_folder_is_empty(tmp_path, monkeypatch):
+    manager = manager_for(tmp_path / "Caddy")
 
     selected = manager.set_config(is_dev=True)
 
     dev_config = tmp_path / "Caddy" / CaddyManager.DEV_CONFIG_NAME
     prod_config = tmp_path / "Caddy" / CaddyManager.PROD_CONFIG_NAME
-    assert selected == dev_config
+    assert selected == (True, str(dev_config))
     assert dev_config.read_text(encoding="utf-8") == CaddyManager.DEV_CONFIG_CONTENT
     assert prod_config.read_text(encoding="utf-8") == CaddyManager.PROD_CONFIG_CONTENT
 
 
-def test_set_config_produces_only_missing_config_and_preserves_existing(tmp_path):
-    manager = CaddyManager(tmp_path)
+def test_set_config_produces_only_missing_config_and_preserves_existing(
+    tmp_path, monkeypatch
+):
+    manager = manager_for(tmp_path)
     existing = tmp_path / CaddyManager.DEV_CONFIG_NAME
     existing.write_text("user-edited dev config", encoding="utf-8")
 
     selected = manager.set_config(is_dev=False)
 
-    assert selected == tmp_path / CaddyManager.PROD_CONFIG_NAME
+    assert selected == (True, str(tmp_path / CaddyManager.PROD_CONFIG_NAME))
     assert existing.read_text(encoding="utf-8") == "user-edited dev config"
-    assert selected.read_text(encoding="utf-8") == CaddyManager.PROD_CONFIG_CONTENT
+    assert Path(selected[1]).read_text(encoding="utf-8") == CaddyManager.PROD_CONFIG_CONTENT
+
+
+def test_set_config_returns_config_producer_failure(tmp_path, monkeypatch):
+    manager = manager_for(tmp_path)
+    monkeypatch.setattr(
+        manager,
+        "__produce_config_files__",
+        lambda: (False, "configuration write failed"),
+    )
+
+    assert manager.set_config(is_dev=True) == (False, "configuration write failed")
+
+
+def test_set_config_rejects_missing_files_after_producer_succeeds(tmp_path, monkeypatch):
+    manager = manager_for(tmp_path)
+    monkeypatch.setattr(
+        manager,
+        "__produce_config_files__",
+        lambda: (True, "producer reported success"),
+    )
+
+    assert manager.set_config(is_dev=True) == (
+        False,
+        "Invalid Caddy configuration files",
+    )
+
+
+def test_start_server_runs_configured_executable_and_streams_output(
+    tmp_path, monkeypatch, capsys
+):
+    manager = manager_for(tmp_path)
+    config_path = tmp_path / CaddyManager.DEV_CONFIG_NAME
+    config_path.write_text("dev", encoding="utf-8")
+    manager.config_path = config_path
+    executable_name = (
+        "caddy-server.exe" if caddy_manager.platform.system().lower() == "windows"
+        else "caddy-server"
+    )
+    executable_path = tmp_path / executable_name
+    executable_path.write_bytes(b"fake executable")
+    process = FakeProcess(stdout_output="server ready\n", stderr_output="test log\n")
+    calls = []
+
+    def fake_popen(command, **kwargs):
+        calls.append((command, kwargs))
+        return process
+
+    monkeypatch.setattr(caddy_manager.subprocess, "Popen", fake_popen)
+
+    result = manager.start_server()
+
+    assert result == (True, "Caddy server started (PID: 1234)")
+    assert manager.server_pid == 1234
+    assert manager._server_process is process
+    assert calls == [
+        (
+            [
+                str(executable_path),
+                "run",
+                "--config",
+                str(config_path),
+                "--adapter",
+                "caddyfile",
+            ],
+            {
+                "cwd": tmp_path,
+                "stdout": caddy_manager.subprocess.PIPE,
+                "stderr": caddy_manager.subprocess.PIPE,
+                "text": True,
+                "encoding": "utf-8",
+                "errors": "replace",
+                "bufsize": 1,
+            },
+        )
+    ]
+    for output_thread in manager._output_threads:
+        output_thread.join(timeout=1)
+    output = capsys.readouterr().out
+    assert "[Caddy stdout] server ready" in output
+    assert "[Caddy stderr] test log" in output
+
+
+def test_start_server_requires_selected_config(tmp_path):
+    assert manager_for(tmp_path).start_server() == (
+        False,
+        "Caddy configuration has not been set",
+    )
+
+
+def test_start_server_requires_executable(tmp_path):
+    manager = manager_for(tmp_path)
+    config_path = tmp_path / CaddyManager.DEV_CONFIG_NAME
+    config_path.write_text("dev", encoding="utf-8")
+    manager.config_path = config_path
+
+    successful, message = manager.start_server()
+
+    assert successful is False
+    assert "Caddy executable does not exist" in message
+
+
+def test_start_server_returns_launch_error(tmp_path, monkeypatch):
+    manager = manager_for(tmp_path)
+    config_path = tmp_path / CaddyManager.DEV_CONFIG_NAME
+    config_path.write_text("dev", encoding="utf-8")
+    manager.config_path = config_path
+    executable_name = (
+        "caddy-server.exe" if caddy_manager.platform.system().lower() == "windows"
+        else "caddy-server"
+    )
+    (tmp_path / executable_name).write_bytes(b"fake executable")
+    monkeypatch.setattr(
+        caddy_manager.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("launch failed")),
+    )
+
+    assert manager.start_server() == (
+        False,
+        "Could not start Caddy server: launch failed",
+    )
+    assert manager.server_pid is None
+
+
+def test_start_server_does_not_start_duplicate_process(tmp_path, monkeypatch):
+    manager = manager_for(tmp_path)
+    process = FakeProcess(pid=42)
+    manager._server_process = process
+    manager.server_pid = process.pid
+    monkeypatch.setattr(
+        caddy_manager.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: pytest.fail("duplicate process should not start"),
+    )
+
+    assert manager.start_server() == (True, "Caddy server is already running (PID: 42)")
+
+
+def test_shutdown_server_terminates_and_clears_process_state(tmp_path):
+    manager = manager_for(tmp_path)
+    process = FakeProcess(pid=42)
+    manager._server_process = process
+    manager.server_pid = process.pid
+
+    result = manager.shutdown_server()
+
+    assert result == (True, "Caddy server stopped (PID: 42)")
+    assert process.terminated is True
+    assert manager.server_pid is None
+    assert manager._server_process is None
+
+
+def test_shutdown_server_kills_process_that_does_not_stop(tmp_path):
+    manager = manager_for(tmp_path)
+    process = FakeProcess(pid=42, timeout_on_wait=True)
+    manager._server_process = process
+    manager.server_pid = process.pid
+
+    result = manager.shutdown_server(timeout=0.01)
+
+    assert result == (True, "Caddy server stopped (PID: 42)")
+    assert process.terminated is True
+    assert process.killed is True
+    assert manager.server_pid is None
+
+
+def test_shutdown_server_reports_when_not_running(tmp_path):
+    assert manager_for(tmp_path).shutdown_server() == (
+        False,
+        "Caddy server is not running",
+    )
+
+
+def test_config_producer_returns_failure_when_file_write_fails(tmp_path, monkeypatch):
+    def fail_write(*_args, **_kwargs):
+        raise OSError("disk is read-only")
+
+    monkeypatch.setattr(Path, "write_text", fail_write)
+
+    result = manager_for(tmp_path).__produce_config_files__()
+
+    assert result[0] is False
+    assert "disk is read-only" in result[1]
 
 
 @pytest.mark.parametrize("invalid_value", [1, 0, "true", None])
 def test_set_config_requires_a_bool(tmp_path, invalid_value):
-    with pytest.raises(TypeError, match="is_dev must be a bool"):
-        CaddyManager(tmp_path).set_config(invalid_value)
+    assert manager_for(tmp_path).set_config(invalid_value) == (
+        False,
+        "is_dev must be a bool",
+    )
 
 
 def test_supported_platforms_lists_site_targets_and_arm_variants():
@@ -108,12 +370,12 @@ def test_supported_platforms_lists_site_targets_and_arm_variants():
 def test_download_for_current_platform_detects_target(
     tmp_path, monkeypatch, system, machine, expected
 ):
-    manager = CaddyManager(tmp_path)
+    manager = manager_for(tmp_path)
     calls = {}
 
     def fake_download(os_name, architecture, **kwargs):
         calls.update(os_name=os_name, architecture=architecture, **kwargs)
-        return tmp_path / "downloaded-caddy"
+        return True, str(tmp_path / "downloaded-caddy")
 
     monkeypatch.setattr(caddy_manager.platform, "system", lambda: system)
     monkeypatch.setattr(caddy_manager.platform, "machine", lambda: machine)
@@ -123,7 +385,7 @@ def test_download_for_current_platform_detects_target(
         modules=["github.com/example/module"], timeout=15
     )
 
-    assert result == tmp_path / "downloaded-caddy"
+    assert result == (True, str(tmp_path / "downloaded-caddy"))
     assert calls == {
         "os_name": expected[0],
         "architecture": expected[1],
@@ -147,8 +409,9 @@ def test_download_for_current_platform_rejects_unsupported_target(
     monkeypatch.setattr(caddy_manager.platform, "system", lambda: system)
     monkeypatch.setattr(caddy_manager.platform, "machine", lambda: machine)
 
-    with pytest.raises(ValueError, match=message):
-        CaddyManager(tmp_path).download_for_current_platform()
+    result = manager_for(tmp_path).download_for_current_platform()
+    assert result[0] is False
+    assert message in result[1]
 
 
 def test_download_binary_extracts_windows_executable_and_builds_api_request(
@@ -163,15 +426,58 @@ def test_download_binary_extracts_windows_executable_and_builds_api_request(
         return response
 
     monkeypatch.setattr(requests, "get", fake_get)
-    manager = CaddyManager(tmp_path)
+    manager = manager_for(tmp_path)
 
-    result = manager.__download_binary__("windows", "amd64")
+    successful, message = manager.__download_binary__("windows", "amd64")
 
-    assert result == tmp_path / "caddy-windows-amd64.exe"
+    result = Path(message)
+    assert successful is True
+    assert result == tmp_path / "caddy-server.exe"
     assert result.read_bytes() == b"windows binary"
     assert request_args["url"] == CaddyManager.DOWNLOAD_URL
     assert request_args["params"] == [("os", "windows"), ("arch", "amd64")]
     assert request_args["stream"] is True
+    assert not (tmp_path / "caddy_windows_amd64.exe").exists()
+
+
+def test_download_binary_reuses_server_named_archive_without_reading_body(
+    tmp_path, monkeypatch
+):
+    response = FakeResponse(make_archive("caddy.exe", b"cached binary"))
+    get_calls = []
+
+    def fake_get(*_args, **_kwargs):
+        get_calls.append(True)
+        return response
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    manager = manager_for(tmp_path)
+
+    first_result = manager.__download_binary__("windows", "amd64")
+    second_result = manager.__download_binary__("windows", "amd64")
+
+    assert first_result == second_result
+    assert first_result[0] is True
+    assert Path(second_result[1]).read_bytes() == b"cached binary"
+    assert response.iter_content_calls == 1
+    assert len(get_calls) == 1
+    assert len(list(tmp_path.glob("caddy*"))) == 1
+    assert not list(tmp_path.glob(".caddy-download-*.name"))
+
+
+def test_download_binary_requires_server_filename(tmp_path, monkeypatch):
+    response = FakeResponse(b"", filename=None)
+    monkeypatch.setattr(
+        requests,
+        "head",
+        lambda *_args, **_kwargs: response,
+    )
+
+    successful, message = manager_for(tmp_path).__download_binary__("linux", "amd64")
+
+    assert successful is False
+    assert "did not provide a filename" in message
+    assert response.iter_content_calls == 0
 
 
 def test_download_binary_passes_arm_and_module_parameters(tmp_path, monkeypatch):
@@ -179,18 +485,20 @@ def test_download_binary_passes_arm_and_module_parameters(tmp_path, monkeypatch)
 
     def fake_get(url, **kwargs):
         request_args.update(url=url, **kwargs)
-        return FakeResponse(make_archive("caddy"))
+        return FakeResponse(make_archive("caddy"), filename="caddy_linux_arm")
 
     monkeypatch.setattr(requests, "get", fake_get)
 
-    result = CaddyManager(tmp_path).__download_binary__(
+    successful, message = manager_for(tmp_path).__download_binary__(
         "linux",
         "arm",
         arm_variant="7",
         modules=["github.com/caddy-dns/cloudflare@v1.2.3"],
     )
 
-    assert result.name.startswith("caddy-linux-arm7-custom-")
+    result = Path(message)
+    assert successful is True
+    assert result.name == "caddy-server"
     assert result.read_bytes() == b"fake caddy executable"
     assert request_args["params"] == [
         ("os", "linux"),
@@ -202,14 +510,47 @@ def test_download_binary_passes_arm_and_module_parameters(tmp_path, monkeypatch)
 
 def test_download_binary_writes_raw_response_body(tmp_path, monkeypatch):
     chmod_calls = []
-    monkeypatch.setattr(requests, "get", lambda *_args, **_kwargs: FakeResponse(b"raw"))
+    monkeypatch.setattr(
+        requests,
+        "get",
+        lambda *_args, **_kwargs: FakeResponse(b"raw", filename="caddy_linux_amd64"),
+    )
     monkeypatch.setattr(Path, "chmod", lambda path, mode: chmod_calls.append(mode))
 
-    result = CaddyManager(tmp_path).__download_binary__("linux", "amd64")
+    successful, message = manager_for(tmp_path).__download_binary__("linux", "amd64")
 
+    result = Path(message)
+    assert successful is True
     assert result.read_bytes() == b"raw"
     assert len(chmod_calls) == 1
     assert chmod_calls[0] & 0o111 == 0o111
+
+
+@pytest.mark.parametrize(
+    ("os_name", "expected_name"),
+    [("windows", "caddy-server.exe"), ("linux", "caddy-server")],
+)
+def test_download_binary_skips_all_requests_when_named_file_exists(
+    tmp_path, monkeypatch, os_name, expected_name
+):
+    manager = manager_for(tmp_path)
+    existing_binary = tmp_path / expected_name
+    existing_binary.write_bytes(b"already downloaded")
+    monkeypatch.setattr(
+        requests,
+        "head",
+        lambda *_args, **_kwargs: pytest.fail("HEAD should not run for cached file"),
+    )
+    monkeypatch.setattr(
+        requests,
+        "get",
+        lambda *_args, **_kwargs: pytest.fail("GET should not run for cached file"),
+    )
+
+    result = manager.__download_binary__(os_name, "amd64")
+
+    assert result == (True, str(existing_binary))
+    assert existing_binary.read_bytes() == b"already downloaded"
 
 
 @pytest.mark.parametrize(
@@ -230,10 +571,11 @@ def test_download_binary_rejects_unsupported_targets_before_request(
         lambda *_args, **_kwargs: pytest.fail("No request expected for invalid target"),
     )
 
-    with pytest.raises(ValueError, match=message):
-        CaddyManager(tmp_path).__download_binary__(
-            os_name, architecture, arm_variant=arm_variant
-        )
+    result = manager_for(tmp_path).__download_binary__(
+        os_name, architecture, arm_variant=arm_variant
+    )
+    assert result[0] is False
+    assert message in result[1]
 
 
 @pytest.mark.parametrize("modules", [[""], ["  "], [None]])
@@ -244,8 +586,11 @@ def test_download_binary_rejects_invalid_module_paths(tmp_path, monkeypatch, mod
         lambda *_args, **_kwargs: pytest.fail("No request expected for invalid module"),
     )
 
-    with pytest.raises(ValueError, match="modules must contain non-empty"):
-        CaddyManager(tmp_path).__download_binary__("linux", "amd64", modules=modules)
+    result = manager_for(tmp_path).__download_binary__(
+        "linux", "amd64", modules=modules
+    )
+    assert result[0] is False
+    assert "modules must contain non-empty" in result[1]
 
 
 def test_download_binary_propagates_http_errors(tmp_path, monkeypatch):
@@ -254,8 +599,9 @@ def test_download_binary_propagates_http_errors(tmp_path, monkeypatch):
         requests, "get", lambda *_args, **_kwargs: FakeResponse(b"", error)
     )
 
-    with pytest.raises(requests.HTTPError, match="not found"):
-        CaddyManager(tmp_path).__download_binary__("linux", "amd64")
+    result = manager_for(tmp_path).__download_binary__("linux", "amd64")
+    assert result[0] is False
+    assert "not found" in result[1]
 
 
 def test_download_binary_rejects_archive_without_executable(tmp_path, monkeypatch):
@@ -266,8 +612,10 @@ def test_download_binary_rejects_archive_without_executable(tmp_path, monkeypatc
         requests, "get", lambda *_args, **_kwargs: FakeResponse(archive.getvalue())
     )
 
-    with pytest.raises(ValueError, match="did not contain its executable"):
-        CaddyManager(tmp_path).__download_binary__("windows", "amd64")
+    result = manager_for(tmp_path).__download_binary__("windows", "amd64")
+    assert result[0] is False
+    assert "did not contain its executable" in result[1]
 
     assert not list(tmp_path.glob("*.download"))
+
 

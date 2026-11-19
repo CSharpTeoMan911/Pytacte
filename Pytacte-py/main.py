@@ -1,4 +1,5 @@
 import asyncio
+import atexit
 import os
 import queue
 import ssl
@@ -11,11 +12,8 @@ from time import monotonic
 from websockets.asyncio.server import ServerConnection, serve
 
 from firebase.firebase_auth import FirebaseAuth
-from firebase.firebase_database import (
-    FirebaseDatabase,
-    ServerAvailabilityDTO,
-    TranscriptionJobsDTO,
-)
+from firebase.firebase_database import FirebaseDatabase, ServerAvailabilityDTO
+from server.caddy_manager import CaddyManager
 from server.load_balancer import LoadBalancer
 from server.transcription_service import SpeechToTextInterface, TrasncriptionResult
 from utils.ConfigManager import Config
@@ -25,7 +23,9 @@ from utils.IpRateLimiter import RateLimiter
 AUTH_CHECKUP_TIME: float = 5  # 5 seconds timeout
 FILE_NAME = "server_config.json"
 
-database:FirebaseDatabase | None = None
+database: FirebaseDatabase | None = None
+
+caddy = CaddyManager()
 
 start_time = 0.0
 
@@ -188,29 +188,37 @@ async def cert_management():
         raise
 
 
-async def transciption_session_heartbeat_manager(transcription_id:str, websocket:ServerConnection):
+async def transciption_session_heartbeat_manager(
+    transcription_id: str, websocket: ServerConnection
+):
     is_succcessful, payload = database.update_transcription_job_heartbeat(
         transcription_id=transcription_id
     )
-    
+
     if not is_succcessful:
         websocket.respond(403, "<Internal_Server_Error/>")
         await websocket.close()
-        
-        
+
+
 def heartbeat_manager_wrapper(coroutine):
     return asyncio.run(coroutine)
-    
-    
-    
+
+
+def shutdown():
+    if loaded_config["security"]["reverse_proxy"] and caddy.server_pid is not None:
+        is_sucessful, message = caddy.shutdown_server()
+        if not is_sucessful:
+            print(f"--> [ Caddy shutdown error: {message} ]")
+    print("--> [ Server shutdown ]")
 
 
 async def echo(websocket: ServerConnection):
+
     client_ip: str | None
 
     transcription_id: str | None
-    
-    last_heartbeat = monotonic() 
+
+    last_heartbeat = monotonic()
 
     if not loaded_config["security"]["reverse_proxy"]:
         client_ip = websocket.remote_address[0]
@@ -301,7 +309,10 @@ async def echo(websocket: ServerConnection):
                                     )
 
                         else:
-                            if isinstance(jwt_validation_message, object) and database is not None:
+                            if (
+                                isinstance(jwt_validation_message, object)
+                                and database is not None
+                            ):
                                 uid = jwt_validation_message["uid"]
                                 server_id = loaded_config["general"]["server_id"]
 
@@ -329,9 +340,11 @@ async def echo(websocket: ServerConnection):
                                     else:
                                         if isinstance(payload.transcription_id, str):
                                             transcription_id = payload.transcription_id
-                                            
-                                            await websocket.send(message="<JWT_Valid/>", text=True)
-                                            
+
+                                            await websocket.send(
+                                                message="<JWT_Valid/>", text=True
+                                            )
+
                                             jwt_checked = True
                                         else:
                                             await websocket.send(
@@ -396,13 +409,20 @@ async def echo(websocket: ServerConnection):
 
                 else:
                     elapsed = monotonic() - last_heartbeat
-                    
-                    if isinstance(message, bytes) and isinstance(
-                        model, SpeechToTextInterface
-                    ) and database is not None:
-                        
+
+                    if (
+                        isinstance(message, bytes)
+                        and isinstance(model, SpeechToTextInterface)
+                        and database is not None
+                    ):
                         if elapsed > 60:
-                            thread_pool.submit(heartbeat_manager_wrapper, transciption_session_heartbeat_manager(transcription_id=transcription_id, websocket=websocket))
+                            thread_pool.submit(
+                                heartbeat_manager_wrapper,
+                                transciption_session_heartbeat_manager(
+                                    transcription_id=transcription_id,
+                                    websocket=websocket,
+                                ),
+                            )
                             last_heartbeat = monotonic()
 
                         model.add_audio_chunk(
@@ -437,7 +457,9 @@ async def main():
         global loaded_config
         global start_time
         global database
-        
+
+        atexit.register(shutdown)
+
         print("--> [ Loading server configuration ]")
 
         loaded_config = initiate_config()
@@ -485,13 +507,35 @@ async def main():
             )
         else:
             print("--> [ Load balancer initialised ]")
-            
-            
+
         print("--> [ Initialising database ]")
-        
-        database = FirebaseDatabase(database_url=database_url, max_transcription_jobs_per_user=max_transcription_jobs, firebase_app=auth.get_app())
-        
+
+        database = FirebaseDatabase(
+            database_url=database_url,
+            max_transcription_jobs_per_user=max_transcription_jobs,
+            firebase_app=auth.get_app(),
+        )
+
         print("--> [ Database initialised ]")
+
+        if loaded_config["security"]["reverse_proxy"]:
+            is_dev: bool = loaded_config["caddy_reverse_proxy"]["is_dev"]
+
+            print("--> [ Loading caddy reverse proxy ]")
+            is_sucessful, message = caddy.download_for_current_platform()
+
+            if is_sucessful:
+                is_sucessful, message = caddy.set_config(is_dev)
+
+                if not is_sucessful:
+                    raise ValueError(f"Caddy configuration error: {message}")
+
+                is_sucessful, message = caddy.start_server()
+                if not is_sucessful:
+                    raise ValueError(f"Caddy startup error: {message}")
+
+            else:
+                raise ValueError(f"Caddy download error: {message}")
 
         start_time = monotonic()
         thread_pool.submit(load_balancing, flag=flag)
@@ -542,9 +586,6 @@ async def main():
     except Exception as e:
         print(f"--> [Error: {e}]")
         raise
-
-    finally:
-        pass
 
 
 if __name__ == "__main__":
