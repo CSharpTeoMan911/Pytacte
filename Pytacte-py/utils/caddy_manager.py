@@ -58,10 +58,10 @@ class CaddyManager:
             log_file.flush()
             
             for line in stderr:
-                log_file.write(f'--> {datetime.now(UTC)} ) [ Error: {line}]')
+                log_file.write(f'--> [ {datetime.now(UTC)} ) [ Error: {line} ]')
                 log_file.flush()
             for line in stout:
-                log_file.write(f'--> {datetime.now(UTC)} ) [ Info: {line}]')
+                log_file.write(f'--> [ {datetime.now(UTC)} ) [ Info: {line} ]')
                 log_file.flush()
             
             log_file.write('\n_________________________________________\n')
