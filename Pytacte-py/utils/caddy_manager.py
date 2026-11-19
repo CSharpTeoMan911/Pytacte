@@ -54,7 +54,7 @@ class CaddyManager:
         log_path = self.caddy_folder / "caddy_server_log.txt"
         with log_path.open("a", encoding="utf-8") as log_file:
             
-            log_file.write('\n_________________________________________')
+            log_file.write('\n_________________________________________\n')
             log_file.flush()
             
             for line in stderr:
@@ -64,7 +64,7 @@ class CaddyManager:
                 log_file.write(f'--> {datetime.now(UTC)} ) [ Info: {line}]')
                 log_file.flush()
             
-            log_file.write('\n_________________________________________')
+            log_file.write('\n_________________________________________\n')
             log_file.flush()
 
     def set_config(self, is_dev: bool) -> tuple[bool, str]:
