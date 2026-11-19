@@ -61,7 +61,7 @@ class CaddyManager:
                 log_file.write(f'--> {datetime.now(UTC)} ) [ Error: {line}]')
                 log_file.flush()
             for line in stout:
-                log_file.write(f'--> {datetime.now(UTC)} ) [ Error: {line}]')
+                log_file.write(f'--> {datetime.now(UTC)} ) [ Info: {line}]')
                 log_file.flush()
             
             log_file.write('\n_________________________________________')
@@ -129,7 +129,7 @@ class CaddyManager:
         self._server_process = process
         self.server_pid = process.pid
         if process.stderr is not None:
-            self.threadpool.submit(self.caddy_logger, process.stderr)
+            self.threadpool.submit(self.caddy_logger, process.stderr, process.stdout)
         return True, f"Caddy server started (PID: {self.server_pid})"
 
     def shutdown_server(self, timeout: float = 10) -> tuple[bool, str]:
