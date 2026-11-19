@@ -260,17 +260,18 @@ for trust-store details.
 Before using `Caddy/Caddyfile-prod.caddy`, edit it and replace
 `YOUR_PUBLIC_IPV4` with the server's public IP address or DNS name, and replace
 `admin@example.com` with an email address for ACME certificate registration.
-The current production template forwards to `127.0.0.1:5000`; set the app's
-`general.ip_address` to `127.0.0.1` and `general.port_number` to `5000` to match.
-Set `general.address` to the public host and `caddy_reverse_proxy.is_dev` to
-`false`. For example:
+The production template listens on public TCP port `3000` and forwards requests
+to the app at `127.0.0.1:5000`. Set the app's `general.ip_address` to
+`127.0.0.1`, `general.port_number` to `5000`, and `general.address` to the
+public host with port `3000`. Set `caddy_reverse_proxy.is_dev` to `false`. For
+example:
 
 ```json
 {
     "general": {
         "ip_address": "127.0.0.1",
         "port_number": 5000,
-        "address": "api.example.com:443"
+        "address": "api.example.com:3000"
     },
     "security": {
         "reverse_proxy": true,
@@ -282,17 +283,63 @@ Set `general.address` to the public host and `caddy_reverse_proxy.is_dev` to
 }
 ```
 
-Point public DNS at the server and allow inbound TCP ports 80 and 443 through
-the host firewall and any cloud firewall. Caddy uses ACME to obtain and renew a
-public certificate, so the host must be reachable for certificate validation.
-The supplied template requests Let's Encrypt's `shortlived` profile, whose
-certificates last about six days; keep Caddy running so it can renew them
-automatically. This profile also permits IP address certificates. Use the same
-public hostname or IP in the Caddyfile and `general.address`. Configure clients
-with that public address; loopback addresses are reachable only from the server
-machine. See Let's Encrypt's
+Point public DNS at the server and configure both the VPS host firewall and any
+cloud firewall to allow inbound TCP connections on ports 80 and 443 for Caddy's
+ACME certificate validation and renewal, and port 3000 for clients to reach the
+reverse proxy. The supplied template requests Let's Encrypt's `shortlived`
+profile, whose certificates last about six days; keep Caddy running so it can
+renew them automatically. This profile also permits IP address certificates.
+Use the same public hostname or IP in the Caddyfile and `general.address`. Configure clients
+with that public address and port `3000`; loopback addresses are reachable only
+from the server machine. See Let's Encrypt's
 [certificate profile information](https://letsencrypt.org/docs/profiles/) for
 details.
+
+##### Oracle Cloud VPS firewall rules
+
+Configure both the Oracle Linux host firewall and the Oracle Cloud ingress
+rules so the server is reachable from the public internet. In the OCI VCN,
+create and enable an Internet Gateway, associate the VPS subnet with a route
+table containing `0.0.0.0/0` routed to that gateway, and ensure the subnet is
+public and the instance has a public IP address. Then add ingress rules to the
+instance's Network Security Group (NSG) or subnet security list for TCP ports
+`80`, `443`, and `3000`. On the VPS, allow the same traffic through
+`firewalld`. First identify the active zone attached to the network interface:
+
+```bash
+sudo firewall-cmd --get-active-zones
+```
+
+Replace `public` below with that zone if it has a different name, then add the
+rules permanently and reload the firewall:
+
+```bash
+sudo firewall-cmd --permanent --zone=public --add-service=ssh
+sudo firewall-cmd --permanent --zone=public --add-service=http
+sudo firewall-cmd --permanent --zone=public --add-service=https
+sudo firewall-cmd --permanent --zone=public --add-port=3000/tcp
+sudo firewall-cmd --reload
+sudo firewall-cmd --zone=public --list-all
+```
+
+See Oracle's [Internet Gateway documentation](https://docs.oracle.com/en-us/iaas/Content/Network/Tasks/managingIGs.htm)
+for VCN gateway and route-table setup details.
+
+When the application runs as a non-root user, grant the downloaded Caddy binary
+permission to bind the privileged ports 80 and 443. Run this after Caddy has
+been downloaded; repeat it if the binary is replaced:
+
+```bash
+sudo setcap 'cap_net_bind_service=+ep' /home/opc/Pytacte-py/Caddy/caddy-server
+```
+
+Keep the app backend on `127.0.0.1:5000` when Caddy runs on the
+same machine; port `5000/tcp` does not need to be exposed publicly in that
+setup. Open it only when clients or a proxy on another machine need direct
+access to the backend. WebSocket connections use the same public Caddy listener
+on port `3000`; the `ws-discovery-client` and `ws-discovery-tcp` firewalld
+services are for WS-Discovery and are not required for ordinary WebSocket
+traffic.
 
 #### One server
 

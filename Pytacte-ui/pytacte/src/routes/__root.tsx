@@ -15,6 +15,14 @@ const theme = createTheme({
 })
 
 export const Route = createRootRoute({
+    head: () => ({
+    links: [
+      {
+        rel: 'icon',
+        href: '/favicon.ico',
+      },
+    ],
+  }),
   component: RootComponent,
 })
 
