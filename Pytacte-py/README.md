@@ -205,6 +205,95 @@ the full configuration file created on first launch. The number of server
 instances and the network transport are independent choices: first choose one
 server or multiple servers, then choose a reverse proxy or direct TLS below.
 
+#### Using the bundled Caddy reverse proxy
+
+The app can start Caddy as its HTTPS reverse proxy. Enable it with
+`security.reverse_proxy: true`, then select the Caddyfile with
+`caddy_reverse_proxy.is_dev`:
+
+| Setting | Value | Effect |
+| --- | --- | --- |
+| `security.reverse_proxy` | `true` | Downloads the matching Caddy binary if needed and starts Caddy. |
+| `caddy_reverse_proxy.is_dev` | `true` | Uses `Caddy/Caddyfile-dev.caddy` for local development. |
+| `caddy_reverse_proxy.is_dev` | `false` | Uses `Caddy/Caddyfile-prod.caddy` for production. |
+
+The app creates either Caddyfile if it is missing and leaves existing files
+unchanged. The binary is stored in `Caddy/caddy-server.exe` on Windows and
+`Caddy/caddy-server` on other supported systems. Caddy's stderr output is
+appended to `Caddy/caddy_error_log.txt`. Stop the Python server normally so it
+can stop the Caddy process it started.
+
+##### Development Caddy setup
+
+The default `Caddy/Caddyfile-dev.caddy` listens on `127.0.0.1:8443`, obtains a
+certificate from Caddy's internal CA, and forwards requests to the app at
+`127.0.0.1:80`. Keep the app and Caddy listener settings aligned in
+`data/server_config.json`:
+
+```json
+{
+    "general": {
+        "ip_address": "127.0.0.1",
+        "port_number": 80,
+        "address": "127.0.0.1:8443"
+    },
+    "security": {
+        "reverse_proxy": true,
+        "tls": true
+    },
+    "caddy_reverse_proxy": {
+        "is_dev": true
+    }
+}
+```
+
+This development listener is loopback-only, so clients must run on the same
+machine. Trust Caddy's local root certificate on each client that connects;
+otherwise HTTPS clients will reject the certificate. Caddy tries to install
+the root certificate automatically. On Windows, its default storage location
+is under `%AppData%\Caddy\pki\authorities\local\root.crt`. See Caddy's
+[Local HTTPS documentation](https://caddyserver.com/docs/automatic-https#local-https)
+for trust-store details.
+
+##### Production Caddy setup
+
+Before using `Caddy/Caddyfile-prod.caddy`, edit it and replace
+`YOUR_PUBLIC_IPV4` with the server's public IP address or DNS name, and replace
+`admin@example.com` with an email address for ACME certificate registration.
+The current production template forwards to `127.0.0.1:5000`; set the app's
+`general.ip_address` to `127.0.0.1` and `general.port_number` to `5000` to match.
+Set `general.address` to the public host and `caddy_reverse_proxy.is_dev` to
+`false`. For example:
+
+```json
+{
+    "general": {
+        "ip_address": "127.0.0.1",
+        "port_number": 5000,
+        "address": "api.example.com:443"
+    },
+    "security": {
+        "reverse_proxy": true,
+        "tls": true
+    },
+    "caddy_reverse_proxy": {
+        "is_dev": false
+    }
+}
+```
+
+Point public DNS at the server and allow inbound TCP ports 80 and 443 through
+the host firewall and any cloud firewall. Caddy uses ACME to obtain and renew a
+public certificate, so the host must be reachable for certificate validation.
+The supplied template requests Let's Encrypt's `shortlived` profile, whose
+certificates last about six days; keep Caddy running so it can renew them
+automatically. This profile also permits IP address certificates. Use the same
+public hostname or IP in the Caddyfile and `general.address`. Configure clients
+with that public address; loopback addresses are reachable only from the server
+machine. See Let's Encrypt's
+[certificate profile information](https://letsencrypt.org/docs/profiles/) for
+details.
+
 #### One server
 
 Use one instance when a single machine will handle transcription and coordinate
