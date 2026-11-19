@@ -13,9 +13,9 @@ from websockets.asyncio.server import ServerConnection, serve
 
 from firebase.firebase_auth import FirebaseAuth
 from firebase.firebase_database import FirebaseDatabase, ServerAvailabilityDTO
-from server.caddy_manager import CaddyManager
 from server.load_balancer import LoadBalancer
 from server.transcription_service import SpeechToTextInterface, TrasncriptionResult
+from utils.caddy_manager import CaddyManager
 from utils.ConfigManager import Config
 from utils.Crytography import RSA_Crypto
 from utils.IpRateLimiter import RateLimiter

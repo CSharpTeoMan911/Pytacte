@@ -1,6 +1,10 @@
 import queue
+import shutil
+import tarfile
+import tempfile
 import threading
 import typing
+import urllib.request
 from collections import deque
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
@@ -105,10 +109,20 @@ class SpeechToTextInterface:
         },
     }
 
+    MODEL_URLS: typing.ClassVar = {
+        "Nemo CTC Critinet 512": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-ctc-en-citrinet-512.tar.bz2",
+        "Nemo CTC Conformer Large": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-ctc-en-conformer-large.tar.bz2",
+        "Nemo Parakeet TDT-CTC 110M": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet_tdt_ctc_110m-en-36000-int8.tar.bz2",
+    }
+
     def __init__(
         self, model_name: str, model_precision: str, thread_pool: ThreadPoolExecutor
     ):
         MODEL_PATH = Path(self.MODELS[model_name]["precision"][model_precision])
+        if not MODEL_PATH.exists():
+            print(f"\n\n--> [ Downloading model: ({model_name}) ]")
+            self.__download_model__(model_name)
+            print(f"--> [ Downloaded model: ({model_name}) ]\n\n")
 
         self.recognizer = sherpa_onnx.OfflineRecognizer.from_nemo_ctc(
             model=str(MODEL_PATH),
@@ -119,6 +133,41 @@ class SpeechToTextInterface:
             decoding_method="greedy_search",
         )
         self.thread_pool = thread_pool
+
+    def __download_model__(self, model_name: str):
+        """Download and unpack the selected model under ``data/models``."""
+        model_url = self.MODEL_URLS[model_name]
+        model_directory = Path(self.MODELS[model_name]["path"])
+        models_directory = model_directory.parent
+        models_directory.mkdir(parents=True, exist_ok=True)
+
+        with tempfile.TemporaryDirectory(dir=models_directory) as temp_directory:
+            archive_path = Path(temp_directory, "model.tar.bz2")
+            with urllib.request.urlopen(model_url) as response, archive_path.open("wb") as archive_file:
+                shutil.copyfileobj(response, archive_file)
+
+            with tarfile.open(archive_path, "r:bz2") as archive:
+                destination = models_directory.resolve()
+                members = archive.getmembers()
+
+                # Reject links and paths outside the models directory before
+                # extracting any archive contents.
+                for member in members:
+                    member_path = (models_directory / member.name).resolve()
+                    if (
+                        not member_path.is_relative_to(destination)
+                        or member.issym()
+                        or member.islnk()
+                        or not (member.isfile() or member.isdir())
+                    ):
+                        raise ValueError(f"Unsafe model archive member: {member.name}")
+
+                archive.extractall(models_directory, members=members)
+
+        if not model_directory.is_dir():
+            raise FileNotFoundError(
+                f"Downloaded model archive did not contain {model_directory.name}"
+            )
 
     def add_audio_chunk(
         self, audio_chunk: bytes | bytearray | memoryview, audio_queue: queue.Queue
