@@ -8,7 +8,9 @@ import subprocess
 import tempfile
 import zipfile
 from collections.abc import Iterable
+from concurrent.futures.thread import ThreadPoolExecutor
 from email.message import Message
+from io import TextIOBase
 from pathlib import Path
 
 import requests
@@ -39,11 +41,20 @@ class CaddyManager:
         "windows": ("6", "7"),
     }
 
-    def __init__(self):
+    def __init__(self, threadpool: ThreadPoolExecutor):
         self.caddy_folder = Path(__file__).resolve().parent.parent / "Caddy"
         self.config_path: Path | None = None
         self.server_pid: int | None = None
         self._server_process: subprocess.Popen | None = None
+        self.threadpool = threadpool
+
+    def caddy_logger(self, stderr: TextIOBase) -> None:
+        """Continuously copy Caddy's stderr to the error log until the pipe closes."""
+        log_path = self.caddy_folder / "caddy_error_log.txt"
+        with log_path.open("a", encoding="utf-8") as log_file:
+            for line in stderr:
+                log_file.write(line)
+                log_file.flush()
 
     def set_config(self, is_dev: bool) -> tuple[bool, str]:
         """Select the dev or production Caddyfile and report its path."""
@@ -95,13 +106,19 @@ class CaddyManager:
                 ],
                 cwd=self.caddy_folder,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
             )
         except OSError as error:
             return False, f"Could not start Caddy server: {error}"
 
         self._server_process = process
         self.server_pid = process.pid
+        if process.stderr is not None:
+            self.threadpool.submit(self.caddy_logger, process.stderr)
         return True, f"Caddy server started (PID: {self.server_pid})"
 
     def shutdown_server(self, timeout: float = 10) -> tuple[bool, str]:

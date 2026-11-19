@@ -25,13 +25,13 @@ FILE_NAME = "server_config.json"
 
 database: FirebaseDatabase | None = None
 
-caddy = CaddyManager()
-
 start_time = 0.0
 
 flag = threading.Event()
 
 thread_pool = ThreadPoolExecutor()
+
+caddy = CaddyManager(thread_pool)
 
 config = Config(encrypt_stream=True)
 
