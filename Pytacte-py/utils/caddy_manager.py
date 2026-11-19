@@ -9,6 +9,7 @@ import tempfile
 import zipfile
 from collections.abc import Iterable
 from concurrent.futures.thread import ThreadPoolExecutor
+from datetime import UTC, datetime
 from email.message import Message
 from io import TextIOBase
 from pathlib import Path
@@ -48,13 +49,23 @@ class CaddyManager:
         self._server_process: subprocess.Popen | None = None
         self.threadpool = threadpool
 
-    def caddy_logger(self, stderr: TextIOBase) -> None:
+    def caddy_logger(self, stderr: TextIOBase, stout: TextIOBase) -> None:
         """Continuously copy Caddy's stderr to the error log until the pipe closes."""
-        log_path = self.caddy_folder / "caddy_error_log.txt"
+        log_path = self.caddy_folder / "caddy_server_log.txt"
         with log_path.open("a", encoding="utf-8") as log_file:
+            
+            log_file.write('\n_________________________________________')
+            log_file.flush()
+            
             for line in stderr:
-                log_file.write(line)
+                log_file.write(f'--> {datetime.now(UTC)} ) [ Error: {line}]')
                 log_file.flush()
+            for line in stout:
+                log_file.write(f'--> {datetime.now(UTC)} ) [ Error: {line}]')
+                log_file.flush()
+            
+            log_file.write('\n_________________________________________')
+            log_file.flush()
 
     def set_config(self, is_dev: bool) -> tuple[bool, str]:
         """Select the dev or production Caddyfile and report its path."""
