@@ -19,6 +19,7 @@ from sherpa_onnx import OfflineStream
 
 
 
+
 class SpeechToTextInterface:
     BACKEND = "auto"
 
@@ -351,11 +352,11 @@ class SpeechToTextInterface:
 
     def start_asr_session(
         self,
+        uid:str,
         audio_queue: queue.Queue,
         asr_queue: queue.Queue,
         results_queue: queue.Queue,
         thread_flag: threading.Event,
-        uid:str
     ):
 
         self.thread_pool.submit(
