@@ -5,13 +5,12 @@ import tempfile
 import threading
 import typing
 import urllib.request
-from _collections_abc import dict_keys
 from collections import deque
+from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
 import sherpa_onnx
-from sherpa_onnx import OfflineStream
 
 # ------------------------------------------------------------
 # Configuration
@@ -112,7 +111,7 @@ class SpeechToTextInterface:
     }
 
     def __init__(
-        self, model_name: str, model_precision: str, shutdown_flag: threading.Event
+        self, model_name: str, model_precision: str
     ):
         MODEL_PATH = Path(self.MODELS[model_name]["precision"][model_precision])
         if not MODEL_PATH.exists():
@@ -128,12 +127,6 @@ class SpeechToTextInterface:
             feature_dim=80,
             decoding_method="greedy_search",
         )
-        self.session_batches: dict[str, tuple[list[OfflineStream], queue.Queue]] = {}
-        self.lock = threading.Lock()
-
-        threading.Thread(
-            target=self.__inference_worker__, args=(shutdown_flag,)
-        ).start()
 
     def __download_model__(self, model_name: str):
         """Download and unpack the selected model under ``data/models``."""
@@ -199,29 +192,11 @@ class SpeechToTextInterface:
         audio = np.concatenate(utterance).astype(np.float32, copy=False)
         asr_queue.put(audio)
 
-    def __inference_worker__(self, flag: threading.Event):
-        while not flag.is_set():
-            keys:dict_keys = self.session_batches.keys()
-            
-            if len(keys) > 0:
-                self.lock.acquire()
-             
-                for key in keys:
-                    sessions, results = self.session_batches.get(key)
-                    self.recognizer.decode_streams(sessions)
-                
-                    for session in sessions:
-                        text = session.result.text.strip()
-                        if text:
-                            results.put(text)        
-                self.lock.release()
-
     def __asr_worker__(
         self,
         asr_queue: queue.Queue,
         results_queue: queue.Queue,
         thread_flag: threading.Event,
-        uid: str,
     ):
         while not thread_flag.is_set():
             audio = asr_queue.get()
@@ -236,16 +211,13 @@ class SpeechToTextInterface:
                     self.SAMPLE_RATE,
                     audio,
                 )
-                
-                self.lock.acquire()
-                batch = self.session_batches.get(uid)
-                if batch is None:
-                    batch = ([stream], results_queue)
-                    self.session_batches[uid] = batch
-                else:
-                    sessions, _ = batch
-                    sessions.append(stream)
-                self.lock.release()
+
+                self.recognizer.decode_stream(stream)
+
+                text = stream.result.text.strip()
+
+                if text:
+                    results_queue.put(text)
 
             finally:
                 asr_queue.task_done()
@@ -256,15 +228,14 @@ class SpeechToTextInterface:
         asr_queue: queue.Queue,
         results_queue: queue.Queue,
         thread_flag: threading.Event,
-        uid: str,
     ):
         silence_limit = max(1, self.END_SILENCE_MS // self.FRAME_MS)
         minimum_frames = max(1, self.MIN_SPEECH_MS // self.FRAME_MS)
         pre_roll_frames = max(1, self.PRE_ROLL_MS // self.FRAME_MS)
-
+        
         threading.Thread(
             target=self.__asr_worker__,
-            args=(asr_queue, results_queue, thread_flag, uid),
+            args=(asr_queue, results_queue, thread_flag),
         ).start()
 
         pre_roll = deque(maxlen=pre_roll_frames)
@@ -281,49 +252,45 @@ class SpeechToTextInterface:
                 except queue.Empty:
                     continue
 
-                try:
-                    if frame.size == 0:
-                        continue
+                if frame.size == 0:
+                    continue
 
-                    rms = float(np.sqrt(np.mean(np.square(frame))))
-                    is_speech = rms >= self.SPEECH_THRESHOLD
+                rms = float(np.sqrt(np.mean(np.square(frame))))
+                is_speech = rms >= self.SPEECH_THRESHOLD
 
-                    if not speaking:
-                        pre_roll.append(frame)
+                if not speaking:
+                    pre_roll.append(frame)
 
-                        if is_speech:
-                            speaking = True
-                            utterance = list(pre_roll)
-                            pre_roll.clear()
+                    if is_speech:
+                        speaking = True
+                        utterance = list(pre_roll)
+                        pre_roll.clear()
 
-                            silence_frames = 0
-                            speech_frame_count = 1
+                        silence_frames = 0
+                        speech_frame_count = 1
 
+                else:
+                    utterance.append(frame)
+
+                    if is_speech:
+                        silence_frames = 0
+                        speech_frame_count += 1
                     else:
-                        utterance.append(frame)
+                        silence_frames += 1
 
-                        if is_speech:
-                            silence_frames = 0
-                            speech_frame_count += 1
-                        else:
-                            silence_frames += 1
+                    if silence_frames >= silence_limit:
+                        self.submit_utterance(
+                            utterance=utterance,
+                            speech_frame_count=speech_frame_count,
+                            minimum_frames=minimum_frames,
+                            asr_queue=asr_queue,
+                        )
 
-                        if silence_frames >= silence_limit:
-                            self.submit_utterance(
-                                utterance=utterance,
-                                speech_frame_count=speech_frame_count,
-                                minimum_frames=minimum_frames,
-                                asr_queue=asr_queue,
-                            )
-
-                            speaking = False
-                            utterance = []
-                            silence_frames = 0
-                            speech_frame_count = 0
-                            pre_roll.clear()
-
-                finally:
-                    audio_queue.task_done()
+                        speaking = False
+                        utterance = []
+                        silence_frames = 0
+                        speech_frame_count = 0
+                        pre_roll.clear()
 
         finally:
             if speaking and utterance:
@@ -339,19 +306,13 @@ class SpeechToTextInterface:
 
     def start_asr_session(
         self,
-        uid: str,
         audio_queue: queue.Queue,
         asr_queue: queue.Queue,
         results_queue: queue.Queue,
         thread_flag: threading.Event,
     ):
+
         threading.Thread(
             target=self.__transcription_service__,
-            args=(
-                audio_queue,
-                asr_queue,
-                results_queue,
-                thread_flag,
-                uid,
-            ),
+            args=(audio_queue, asr_queue, results_queue, thread_flag),
         ).start()

@@ -1,11 +1,11 @@
 import asyncio
-import atexit
 import copy
 import os
 import queue
 import ssl
 import threading
 import time
+from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 from time import monotonic
 
@@ -29,7 +29,10 @@ start_time = 0.0
 
 flag = threading.Event()
 
-caddy = CaddyManager()
+# Five model inference workers, one load-balancer worker, and one Caddy logger.
+thread_pool = ThreadPoolExecutor(max_workers=2)
+
+caddy = CaddyManager(thread_pool)
 
 config = Config(encrypt_stream=True)
 
@@ -46,31 +49,26 @@ model_options = {
             "Floating-Point 32": SpeechToTextInterface(
                 model_name="Nemo CTC Critinet 512",
                 model_precision="Floating-Point 32",
-                shutdown_flag=flag,
             ),
             "Quantised 8": SpeechToTextInterface(
                 model_name="Nemo CTC Critinet 512",
                 model_precision="Quantised 8",
-                shutdown_flag=flag,
             ),
         },
         "Nemo CTC Conformer Large": {
             "Floating-Point 32": SpeechToTextInterface(
                 model_name="Nemo CTC Conformer Large",
                 model_precision="Floating-Point 32",
-                shutdown_flag=flag,
             ),
             "Quantised 8": SpeechToTextInterface(
                 model_name="Nemo CTC Conformer Large",
                 model_precision="Quantised 8",
-                shutdown_flag=flag,
             ),
         },
         "Nemo Parakeet TDT-CTC 110M": {
             "Quantised 8": SpeechToTextInterface(
                 model_name="Nemo Parakeet TDT-CTC 110M",
                 model_precision="Quantised 8",
-                shutdown_flag=flag,
             ),
         },
     },
@@ -100,14 +98,12 @@ def initiate_config() -> object:
 def load_balancing(flag: threading.Event):
     global start_time
 
-    prev_time: int = 0
-    heartbeat_period: int = 30
-    load_balancing_period: int = 60 * 2
+    period: int = 30
 
     while not flag.is_set():
         current_time = int(monotonic() - start_time)
 
-        if current_time % heartbeat_period == 0 and prev_time != current_time:
+        if current_time >= period:
             server_id: str = loaded_config["general"]["server_id"]
             server_address = loaded_config["general"]["address"]
             is_load_balancer_node = loaded_config["general"]["is_load_balancer_node"]
@@ -122,20 +118,11 @@ def load_balancing(flag: threading.Event):
             )
 
             load_balancer.update_cpu_and_ram_metrics(server_id=server_id, data=data)
-
-        if (
-            current_time > 0
-            and current_time % load_balancing_period == 0
-            and prev_time != current_time
-            and loaded_config["general"]["is_load_balancer_node"]
-        ):
-            load_balancer.delete_expired_items()
-            load_balancer.sort_servers_by_cpu()
-
-            start_time = monotonic()
-            prev_time = 0
-
-        prev_time = current_time
+            
+            if loaded_config["general"]["is_load_balancer_node"]:
+                load_balancer.delete_expired_items()
+                load_balancer.sort_servers_by_cpu()
+                start_time = monotonic()
 
 
 async def cert_management():
@@ -201,13 +188,6 @@ async def transciption_session_heartbeat_manager(
 def heartbeat_manager_wrapper(coroutine):
     return asyncio.run(coroutine)
 
-
-def shutdown():
-    if loaded_config["security"]["reverse_proxy"] and caddy.server_pid is not None:
-        is_sucessful, message = caddy.shutdown_server()
-        if not is_sucessful:
-            print(f"--> [ Caddy shutdown error: {message} ]")
-    print("--> [ Server shutdown ]")
 
 
 async def echo(websocket: ServerConnection):
@@ -387,7 +367,6 @@ async def echo(websocket: ServerConnection):
                                     asr_queue=asr_queue,
                                     results_queue=results_queue,
                                     thread_flag=ASR_FLAG,
-                                    uid=transcription_id,
                                 )
 
                                 await websocket.send(
@@ -417,16 +396,11 @@ async def echo(websocket: ServerConnection):
                         if elapsed > 60:
                             threading.Thread(
                                 target=heartbeat_manager_wrapper,
-                                args=(
-                                    transciption_session_heartbeat_manager(
-                                        transcription_id=transcription_id,
-                                        websocket=websocket,
-                                    ),
+                                args=transciption_session_heartbeat_manager(
+                                    transcription_id=transcription_id,
+                                    websocket=websocket,
                                 ),
-                                name=f"heartbeat-{transcription_id}",
-                                daemon=True,
                             ).start()
-                            last_heartbeat = monotonic()
 
                         model.add_audio_chunk(
                             audio_chunk=message, audio_queue=audio_queue
@@ -461,8 +435,6 @@ async def main():
         global loaded_config
         global start_time
         global database
-
-        atexit.register(shutdown)
 
         print("--> [ Loading server configuration ]")
 
@@ -542,12 +514,7 @@ async def main():
                 raise ValueError(f"Caddy download error: {message}")
 
         start_time = monotonic()
-        threading.Thread(
-            target=load_balancing,
-            kwargs={"flag": flag},
-            name="load-balancing",
-            daemon=True,
-        ).start()
+        thread_pool.submit(load_balancing, flag=flag)
 
         IP = loaded_config["general"]["ip_address"]
         PORT = loaded_config["general"]["port_number"]
@@ -595,6 +562,13 @@ async def main():
     except Exception as e:
         print(f"--> [Error: {e}]")
         raise
+    
+    finally:
+        if loaded_config["security"]["reverse_proxy"] and caddy.server_pid is not None:
+            is_sucessful, message = caddy.shutdown_server()
+            if not is_sucessful:
+                print(f"--> [ Caddy shutdown error: {message} ]")
+        print("--> [ Server shutdown ]")
 
 
 if __name__ == "__main__":
