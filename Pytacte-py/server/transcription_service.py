@@ -184,7 +184,7 @@ class SpeechToTextInterface:
         if samples.size:
             audio_queue.put_nowait(samples)
 
-    def submit_utterance(
+    def __submit_utterance__(
         self,
         utterance: list,
         speech_frame_count: int,
@@ -322,7 +322,7 @@ class SpeechToTextInterface:
                             silence_frames += 1
 
                         if silence_frames >= silence_limit:
-                            self.submit_utterance(
+                            self.__submit_utterance__(
                                 utterance=utterance,
                                 speech_frame_count=speech_frame_count,
                                 minimum_frames=minimum_frames,
@@ -339,7 +339,7 @@ class SpeechToTextInterface:
 
         finally:
             if speaking and utterance:
-                self.submit_utterance(
+                self.__submit_utterance__(
                     utterance=utterance,
                     speech_frame_count=speech_frame_count,
                     minimum_frames=minimum_frames,
