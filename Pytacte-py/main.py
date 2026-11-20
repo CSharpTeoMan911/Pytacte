@@ -6,7 +6,6 @@ import queue
 import ssl
 import threading
 import time
-from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 from time import monotonic
 
@@ -30,9 +29,7 @@ start_time = 0.0
 
 flag = threading.Event()
 
-thread_pool = ThreadPoolExecutor()
-
-caddy = CaddyManager(thread_pool)
+caddy = CaddyManager()
 
 config = Config(encrypt_stream=True)
 
@@ -49,36 +46,31 @@ model_options = {
             "Floating-Point 32": SpeechToTextInterface(
                 model_name="Nemo CTC Critinet 512",
                 model_precision="Floating-Point 32",
-                thread_pool=thread_pool,
-                shutdown_flag=flag
+                shutdown_flag=flag,
             ),
             "Quantised 8": SpeechToTextInterface(
                 model_name="Nemo CTC Critinet 512",
                 model_precision="Quantised 8",
-                thread_pool=thread_pool,
-                shutdown_flag=flag
+                shutdown_flag=flag,
             ),
         },
         "Nemo CTC Conformer Large": {
             "Floating-Point 32": SpeechToTextInterface(
                 model_name="Nemo CTC Conformer Large",
                 model_precision="Floating-Point 32",
-                thread_pool=thread_pool,
-                shutdown_flag=flag
+                shutdown_flag=flag,
             ),
             "Quantised 8": SpeechToTextInterface(
                 model_name="Nemo CTC Conformer Large",
                 model_precision="Quantised 8",
-                thread_pool=thread_pool,
-                shutdown_flag=flag
+                shutdown_flag=flag,
             ),
         },
         "Nemo Parakeet TDT-CTC 110M": {
             "Quantised 8": SpeechToTextInterface(
                 model_name="Nemo Parakeet TDT-CTC 110M",
                 model_precision="Quantised 8",
-                thread_pool=thread_pool,
-                shutdown_flag=flag
+                shutdown_flag=flag,
             ),
         },
     },
@@ -395,7 +387,7 @@ async def echo(websocket: ServerConnection):
                                     asr_queue=asr_queue,
                                     results_queue=results_queue,
                                     thread_flag=ASR_FLAG,
-                                    uid=transcription_id
+                                    uid=transcription_id,
                                 )
 
                                 await websocket.send(
@@ -423,30 +415,29 @@ async def echo(websocket: ServerConnection):
                         and database is not None
                     ):
                         if elapsed > 60:
-                            thread_pool.submit(
-                                heartbeat_manager_wrapper,
-                                transciption_session_heartbeat_manager(
-                                    transcription_id=transcription_id,
-                                    websocket=websocket,
+                            threading.Thread(
+                                target=heartbeat_manager_wrapper,
+                                args=(
+                                    transciption_session_heartbeat_manager(
+                                        transcription_id=transcription_id,
+                                        websocket=websocket,
+                                    ),
                                 ),
-                            )
+                                name=f"heartbeat-{transcription_id}",
+                                daemon=True,
+                            ).start()
                             last_heartbeat = monotonic()
 
                         model.add_audio_chunk(
                             audio_chunk=message, audio_queue=audio_queue
                         )
-                        
-                        
+
                         _results_queue = copy.copy(results_queue)
                         if _results_queue.qsize() > 0:
-                            recognition_result =  _results_queue.get_nowait()
-                            await websocket.send(
-                                message=recognition_result, text=True
-                            )
+                            recognition_result = _results_queue.get_nowait()
+                            await websocket.send(message=recognition_result, text=True)
                         else:
-                            await websocket.send(
-                                message="", text=True
-                            )
+                            await websocket.send(message="", text=True)
                     else:
                         websocket.respond(403, "<Invalid_Message/>")
                         await websocket.close()
@@ -551,7 +542,12 @@ async def main():
                 raise ValueError(f"Caddy download error: {message}")
 
         start_time = monotonic()
-        thread_pool.submit(load_balancing, flag=flag)
+        threading.Thread(
+            target=load_balancing,
+            kwargs={"flag": flag},
+            name="load-balancing",
+            daemon=True,
+        ).start()
 
         IP = loaded_config["general"]["ip_address"]
         PORT = loaded_config["general"]["port_number"]

@@ -5,10 +5,10 @@ from __future__ import annotations
 import platform
 import shutil
 import subprocess
+import threading
 import tempfile
 import zipfile
 from collections.abc import Iterable
-from concurrent.futures.thread import ThreadPoolExecutor
 from datetime import UTC, datetime
 from email.message import Message
 from io import TextIOBase
@@ -42,12 +42,11 @@ class CaddyManager:
         "windows": ("6", "7"),
     }
 
-    def __init__(self, threadpool: ThreadPoolExecutor):
+    def __init__(self):
         self.caddy_folder = Path(__file__).resolve().parent.parent / "Caddy"
         self.config_path: Path | None = None
         self.server_pid: int | None = None
         self._server_process: subprocess.Popen | None = None
-        self.threadpool = threadpool
 
     def caddy_logger(self, stderr: TextIOBase, stout: TextIOBase) -> None:
         """Continuously copy Caddy's stderr to the error log until the pipe closes."""
@@ -129,7 +128,12 @@ class CaddyManager:
         self._server_process = process
         self.server_pid = process.pid
         if process.stderr is not None:
-            self.threadpool.submit(self.caddy_logger, process.stderr, process.stdout)
+            threading.Thread(
+                target=self.caddy_logger,
+                args=(process.stderr, process.stdout),
+                name="caddy-logger",
+                daemon=True,
+            ).start()
         return True, f"Caddy server started (PID: {self.server_pid})"
 
     def shutdown_server(self, timeout: float = 10) -> tuple[bool, str]:

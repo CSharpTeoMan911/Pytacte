@@ -3,11 +3,10 @@ import shutil
 import tarfile
 import tempfile
 import threading
-import time
 import typing
 import urllib.request
+from _collections_abc import dict_keys
 from collections import deque
-from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -17,7 +16,6 @@ from sherpa_onnx import OfflineStream
 # ------------------------------------------------------------
 # Configuration
 # ------------------------------------------------------------
-
 
 
 class SpeechToTextInterface:
@@ -114,7 +112,7 @@ class SpeechToTextInterface:
     }
 
     def __init__(
-        self, model_name: str, model_precision: str, thread_pool: ThreadPoolExecutor, shutdown_flag: threading.Event
+        self, model_name: str, model_precision: str, shutdown_flag: threading.Event
     ):
         MODEL_PATH = Path(self.MODELS[model_name]["precision"][model_precision])
         if not MODEL_PATH.exists():
@@ -130,12 +128,12 @@ class SpeechToTextInterface:
             feature_dim=80,
             decoding_method="greedy_search",
         )
-        self.thread_pool = thread_pool
         self.session_batches: dict[str, tuple[list[OfflineStream], queue.Queue]] = {}
-        self._batch_condition = threading.Condition()
+        self.lock = threading.Lock()
 
-        self.thread_pool.submit(self.__inference_worker__, shutdown_flag)
-
+        threading.Thread(
+            target=self.__inference_worker__, args=(shutdown_flag,)
+        ).start()
 
     def __download_model__(self, model_name: str):
         """Download and unpack the selected model under ``data/models``."""
@@ -146,7 +144,10 @@ class SpeechToTextInterface:
 
         with tempfile.TemporaryDirectory(dir=models_directory) as temp_directory:
             archive_path = Path(temp_directory, "model.tar.bz2")
-            with urllib.request.urlopen(model_url) as response, archive_path.open("wb") as archive_file:
+            with (
+                urllib.request.urlopen(model_url) as response,
+                archive_path.open("wb") as archive_file,
+            ):
                 shutil.copyfileobj(response, archive_file)
 
             with tarfile.open(archive_path, "r:bz2") as archive:
@@ -198,43 +199,29 @@ class SpeechToTextInterface:
         audio = np.concatenate(utterance).astype(np.float32, copy=False)
         asr_queue.put(audio)
 
-    def __inference_worker__(self, flag:threading.Event):
-        while True:
-            with self._batch_condition:
-                while not flag.is_set() and not self.session_batches:
-                    self._batch_condition.wait(timeout=0.1)
-
-                if flag.is_set() and not self.session_batches:
-                    return
-
-                pending_batches = list(self.session_batches.values())
-                self.session_batches.clear()
-
-            streams: list[OfflineStream] = []
-            stream_results: list[queue.Queue] = []
+    def __inference_worker__(self, flag: threading.Event):
+        while not flag.is_set():
+            keys:dict_keys = self.session_batches.keys()
             
-            
-            for sessions, results in pending_batches:
-                streams.extend(sessions)
-                stream_results.extend([results] * len(sessions))
-
-            if not streams:
-                continue
-        
-            for stream, results in zip(streams, stream_results):
-                self.recognizer.decode_stream(stream)
-                text = stream.result.text.strip()
-                if text:
-                    results.put(text)
-                    
-            time.sleep(0.2)
+            if len(keys) > 0:
+                self.lock.acquire()
+             
+                for key in keys:
+                    sessions, results = self.session_batches.get(key)
+                    self.recognizer.decode_streams(sessions)
+                
+                    for session in sessions:
+                        text = session.result.text.strip()
+                        if text:
+                            results.put(text)        
+                self.lock.release()
 
     def __asr_worker__(
         self,
         asr_queue: queue.Queue,
         results_queue: queue.Queue,
         thread_flag: threading.Event,
-        uid:str
+        uid: str,
     ):
         while not thread_flag.is_set():
             audio = asr_queue.get()
@@ -249,18 +236,16 @@ class SpeechToTextInterface:
                     self.SAMPLE_RATE,
                     audio,
                 )
-
-                with self._batch_condition:
-                    batch = self.session_batches.get(uid)
-                    if batch is None:
-                        sessions = []
-                        batch = (sessions, results_queue)
-                        self.session_batches[uid] = batch
-                    else:
-                        sessions, _ = batch
-
+                
+                self.lock.acquire()
+                batch = self.session_batches.get(uid)
+                if batch is None:
+                    batch = ([stream], results_queue)
+                    self.session_batches[uid] = batch
+                else:
+                    sessions, _ = batch
                     sessions.append(stream)
-                    self._batch_condition.notify()
+                self.lock.release()
 
             finally:
                 asr_queue.task_done()
@@ -271,19 +256,16 @@ class SpeechToTextInterface:
         asr_queue: queue.Queue,
         results_queue: queue.Queue,
         thread_flag: threading.Event,
-        uid:str
+        uid: str,
     ):
         silence_limit = max(1, self.END_SILENCE_MS // self.FRAME_MS)
         minimum_frames = max(1, self.MIN_SPEECH_MS // self.FRAME_MS)
         pre_roll_frames = max(1, self.PRE_ROLL_MS // self.FRAME_MS)
 
-        self.thread_pool.submit(
-            self.__asr_worker__,
-            asr_queue=asr_queue,
-            results_queue=results_queue,
-            thread_flag=thread_flag,
-            uid=uid
-        )
+        threading.Thread(
+            target=self.__asr_worker__,
+            args=(asr_queue, results_queue, thread_flag, uid),
+        ).start()
 
         pre_roll = deque(maxlen=pre_roll_frames)
 
@@ -339,7 +321,7 @@ class SpeechToTextInterface:
                             silence_frames = 0
                             speech_frame_count = 0
                             pre_roll.clear()
-                        
+
                 finally:
                     audio_queue.task_done()
 
@@ -357,18 +339,19 @@ class SpeechToTextInterface:
 
     def start_asr_session(
         self,
-        uid:str,
+        uid: str,
         audio_queue: queue.Queue,
         asr_queue: queue.Queue,
         results_queue: queue.Queue,
         thread_flag: threading.Event,
     ):
-
-        self.thread_pool.submit(
-            self.__transcription_service__,
-            audio_queue=audio_queue,
-            asr_queue=asr_queue,
-            results_queue= results_queue,
-            thread_flag=thread_flag,
-            uid=uid
-        )
+        threading.Thread(
+            target=self.__transcription_service__,
+            args=(
+                audio_queue,
+                asr_queue,
+                results_queue,
+                thread_flag,
+                uid,
+            ),
+        ).start()
