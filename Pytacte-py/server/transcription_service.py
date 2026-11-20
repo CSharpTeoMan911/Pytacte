@@ -3,6 +3,7 @@ import shutil
 import tarfile
 import tempfile
 import threading
+import time
 import typing
 import urllib.request
 from collections import deque
@@ -184,7 +185,7 @@ class SpeechToTextInterface:
         if samples.size:
             audio_queue.put_nowait(samples)
 
-    def __submit_utterance__(
+    def submit_utterance(
         self,
         utterance: list,
         speech_frame_count: int,
@@ -211,6 +212,8 @@ class SpeechToTextInterface:
 
             streams: list[OfflineStream] = []
             stream_results: list[queue.Queue] = []
+            
+            
             for sessions, results in pending_batches:
                 streams.extend(sessions)
                 stream_results.extend([results] * len(sessions))
@@ -218,11 +221,13 @@ class SpeechToTextInterface:
             if not streams:
                 continue
         
-            for stream in streams:
+            for stream, results in zip(streams, stream_results):
                 self.recognizer.decode_stream(stream)
                 text = stream.result.text.strip()
                 if text:
                     results.put(text)
+                    
+            time.sleep(0.2)
 
     def __asr_worker__(
         self,
@@ -322,7 +327,7 @@ class SpeechToTextInterface:
                             silence_frames += 1
 
                         if silence_frames >= silence_limit:
-                            self.__submit_utterance__(
+                            self.submit_utterance(
                                 utterance=utterance,
                                 speech_frame_count=speech_frame_count,
                                 minimum_frames=minimum_frames,
@@ -334,12 +339,13 @@ class SpeechToTextInterface:
                             silence_frames = 0
                             speech_frame_count = 0
                             pre_roll.clear()
+                        
                 finally:
                     audio_queue.task_done()
 
         finally:
             if speaking and utterance:
-                self.__submit_utterance__(
+                self.submit_utterance(
                     utterance=utterance,
                     speech_frame_count=speech_frame_count,
                     minimum_frames=minimum_frames,
@@ -366,4 +372,3 @@ class SpeechToTextInterface:
             thread_flag=thread_flag,
             uid=uid
         )
-
