@@ -217,13 +217,11 @@ class SpeechToTextInterface:
 
             if not streams:
                 continue
-            
-
-            self.recognizer.decode_streams(streams)
-
-            for stream, results in zip(streams, stream_results):
-                 text = stream.result.text.strip()
-                 if text:
+        
+            for stream in streams:
+                self.recognizer.decode_stream(stream)
+                text = stream.result.text.strip()
+                if text:
                     results.put(text)
 
     def __asr_worker__(
