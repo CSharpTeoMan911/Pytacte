@@ -396,10 +396,10 @@ async def echo(websocket: ServerConnection):
                         if elapsed > 60:
                             threading.Thread(
                                 target=heartbeat_manager_wrapper,
-                                args=transciption_session_heartbeat_manager(
+                                args=(transciption_session_heartbeat_manager(
                                     transcription_id=transcription_id,
                                     websocket=websocket,
-                                ),
+                                )),
                             ).start()
 
                         model.add_audio_chunk(

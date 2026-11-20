@@ -376,6 +376,47 @@ def test_server_heartbeat_creates_missing_client_record(database, monkeypatch):
     client_reference.update.assert_not_called()
 
 
+def test_delete_orphan_client_servers_deletes_missing_server(database, monkeypatch):
+    orphan_id = "orphan-server-1"
+    client_record = {
+        "server_id": orphan_id,
+        "server_address": "192.0.2.1:443",
+        "tls": True,
+        "cpu_usage": 10.0,
+    }
+    client_page = {orphan_id: client_record}
+
+    client_root = MagicMock()
+    client_root.order_by_key.return_value.limit_to_first.return_value.get.return_value = (
+        client_page
+    )
+    client_root.order_by_key.return_value.start_at.return_value.limit_to_first.return_value.get.return_value = (
+        client_page
+    )
+
+    server_root = MagicMock()
+    server_root.order_by_child.return_value.equal_to.return_value.get.return_value = {}
+
+    def reference(path, **_kwargs):
+        if path == "/Client_Available_Pytacte_Servers":
+            return client_root
+        if path == "/ServerAvailability":
+            return server_root
+        pytest.fail(f"Unexpected Firebase reference path: {path}")
+
+    client_reference = MagicMock()
+    monkeypatch.setattr(firebase_database.db, "reference", reference)
+    monkeypatch.setattr(
+        database,
+        "__reference__",
+        lambda collection, record_id: client_reference,
+    )
+
+    database.delete_orphan_client_servers()
+
+    client_reference.delete.assert_called_once_with()
+
+
 def test_create_server_availability_returns_failure_for_duplicate(database, monkeypatch):
     reference = MagicMock()
     reference.get.return_value = {"server_id": "server-1"}

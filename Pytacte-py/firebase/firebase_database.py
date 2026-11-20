@@ -349,7 +349,7 @@ class FirebaseDatabase:
                 while True:
                     server_id, record = next(items_to_be_copied)
                     _last_id = server_id
-                    
+
                     if server_id == last_id:
                         continue
 
@@ -373,10 +373,10 @@ class FirebaseDatabase:
         if items_count == 0:
             return
 
-        limit = items_count / 2 
-        
+        limit = items_count / 2
+
         limit = 1 if limit == 0 else limit
-        
+
         while True:
             items = (
                 db.reference(
@@ -393,7 +393,7 @@ class FirebaseDatabase:
                 break
 
             server_id, record = next(iter(items.items()))
-            
+
             try:
                 self.__reference__(
                     "Client_Available_Pytacte_Servers", server_id
@@ -401,7 +401,7 @@ class FirebaseDatabase:
                 limit -= 1
             except FirebaseError, ValueError:
                 pass
-            
+
             if limit == 0:
                 break
 
@@ -413,7 +413,9 @@ class FirebaseDatabase:
             if not isinstance(data, ServerAvailabilityDTO):
                 raise TypeError("data must be a ServerAvailabilityDTO")
             self.__validate_record_id__(data.server_id)
-            if isinstance(data.cpu_usage, bool) or not isinstance(data.cpu_usage, (int, float)):
+            if isinstance(data.cpu_usage, bool) or not isinstance(
+                data.cpu_usage, (int, float)
+            ):
                 raise TypeError("cpu_usage must be a number")
             data.last_heartbeat = self.__current_heartbeat__()
             self.__update__("ServerAvailability", data.server_id, data.to_record())
@@ -436,7 +438,13 @@ class FirebaseDatabase:
                     client_reference.set(client_data.to_record())
                 else:
                     client_reference.update(client_data.to_record())
-            except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
+            except (
+                ValueError,
+                TypeError,
+                KeyError,
+                RuntimeError,
+                FirebaseError,
+            ) as error:
                 return (
                     False,
                     (
@@ -567,6 +575,72 @@ class FirebaseDatabase:
 
         return True, f"Deleted {deleted_count} expired server record(s)"
 
+    def delete_orphan_client_servers(self):
+        last_id = None
+
+        while True:
+            items = (
+                db.reference(
+                    "/Client_Available_Pytacte_Servers",
+                    app=self.firebase_app,
+                    url=self.database_url,
+                )
+                .order_by_key()
+                .limit_to_first(20)
+                .get()
+                if last_id is None
+                else db.reference(
+                    "/Client_Available_Pytacte_Servers",
+                    app=self.firebase_app,
+                    url=self.database_url,
+                )
+                .order_by_key()
+                .start_at(last_id)
+                .limit_to_first(20)
+                .get()
+            )
+
+            if not isinstance(items, Mapping) or not items:
+                break
+
+            items_to_be_copied = iter(items.items())
+
+            _last_id = None
+            try:
+                while True:
+                    server_id, record = next(items_to_be_copied)
+                    _last_id = server_id
+
+                    if server_id == last_id:
+                        continue
+
+                    try:
+                        _items = (
+                            db.reference(
+                                "/ServerAvailability",
+                                app=self.firebase_app,
+                                url=self.database_url,
+                            )
+                            .order_by_child("server_id")
+                            .equal_to(server_id)
+                            .get()
+                        )
+
+                        if not isinstance(_items, Mapping) or not _items:
+                            self.__reference__(
+                                "Client_Available_Pytacte_Servers", server_id
+                            ).delete()
+
+                    except FirebaseError, ValueError:
+                        pass
+            except StopIteration:
+                pass
+
+            if _last_id == last_id:
+                break
+            else:
+                last_id = _last_id
+
     def delete_expired_transcription_jobs(self) -> tuple[bool, str]:
         """Delete transcription jobs whose UTC heartbeat is over five minutes old."""
 
@@ -636,7 +710,7 @@ class FirebaseDatabase:
         reference.update(dict(changes))
         return reference.get()
 
-    def __count_transcription_jobs_for_user__(self, user_uid: str) -> int: 
+    def __count_transcription_jobs_for_user__(self, user_uid: str) -> int:
         items_count = 0
         last_id = None
 
@@ -672,10 +746,10 @@ class FirebaseDatabase:
                 while True:
                     server_id, record = next(items_to_be_copied)
                     _last_id = server_id
-                    
+
                     if server_id == last_id:
                         continue
-                    
+
                     items_count += 1
             except StopIteration:
                 pass
@@ -684,7 +758,7 @@ class FirebaseDatabase:
                 break
             else:
                 last_id = _last_id
-        
+
         return items_count
 
     def __current_heartbeat__(self) -> int:

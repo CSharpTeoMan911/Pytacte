@@ -19,6 +19,7 @@ from firebase_admin import credentials
 from firebase_admin import db as firebase_db
 
 from firebase.firebase_database import FirebaseDatabase, ServerAvailabilityDTO
+from server.load_balancer import LoadBalancer
 
 
 def _run_server_sort_in_process(database_url):
@@ -368,6 +369,78 @@ def test_delete_expired_servers_removes_expired_and_preserves_fresh(database):
     finally:
         # Clean up test records left behind by the method or a failed assertion.
         collection.update({server_id: None for server_id in test_records})
+
+
+def test_delete_expired_items_removes_server_from_client_collection(database):
+    suffix = uuid4().hex
+    server_id = f"expired-client-server-test-{suffix}"
+    cutoff = int(
+        (datetime.now(UTC) - timedelta(minutes=5)).strftime("%Y%m%d%H%M")
+    )
+
+    # delete_expired_items() sweeps all expired jobs and servers, so don't run
+    # this live test if unrelated stale records already exist in the database.
+    for collection_name in ("ServerAvailability", "TranscriptionJobs"):
+        expired_items = (
+            firebase_db.reference(
+                f"/{collection_name}",
+                app=database.firebase_app,
+                url=database.database_url,
+            )
+            .order_by_child("last_heartbeat")
+            .end_at(cutoff)
+            .limit_to_first(1)
+            .get()
+        )
+        if expired_items:
+            pytest.skip(
+                f"Refusing global cleanup: expired records already exist in "
+                f"{collection_name}"
+            )
+
+    server_collection = firebase_db.reference(
+        "/ServerAvailability",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+    client_collection = firebase_db.reference(
+        "/Client_Available_Pytacte_Servers",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+    server_record = {
+        "server_id": server_id,
+        "server_address": "127.0.0.1:1",
+        "load_balancer": False,
+        "tls": False,
+        "cpu_usage": 0.0,
+        "last_heartbeat": int(
+            (datetime.now(UTC) - timedelta(minutes=10)).strftime("%Y%m%d%H%M")
+        ),
+    }
+    client_record = {
+        "server_id": server_id,
+        "server_address": server_record["server_address"],
+        "tls": server_record["tls"],
+        "cpu_usage": server_record["cpu_usage"],
+    }
+
+    try:
+        server_collection.child(server_id).set(server_record)
+        client_collection.child(server_id).set(client_record)
+        assert server_collection.child(server_id).get() == server_record
+        assert client_collection.child(server_id).get() == client_record
+
+        load_balancer = LoadBalancer.__new__(LoadBalancer)
+        load_balancer.database_connection = database
+        result = load_balancer.delete_expired_items()
+
+        assert result[0] == [True, True], result
+        assert server_collection.child(server_id).get() is None
+        assert client_collection.child(server_id).get() is None
+    finally:
+        server_collection.child(server_id).delete()
+        client_collection.child(server_id).delete()
 
 
 def test_delete_expired_server_with_only_last_heartbeat(database):
