@@ -19,7 +19,6 @@ from sherpa_onnx import OfflineStream
 
 
 
-
 class SpeechToTextInterface:
     BACKEND = "auto"
 
