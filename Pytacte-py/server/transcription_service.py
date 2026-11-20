@@ -3,6 +3,7 @@ import shutil
 import tarfile
 import tempfile
 import threading
+import time
 import typing
 import urllib.request
 from collections import deque
@@ -223,6 +224,8 @@ class SpeechToTextInterface:
                 text = stream.result.text.strip()
                 if text:
                     results.put(text)
+                    
+            time.sleep(0.2)
 
     def __asr_worker__(
         self,
@@ -259,6 +262,8 @@ class SpeechToTextInterface:
 
             finally:
                 asr_queue.task_done()
+                
+            time.sleep(0.2)
 
     def __transcription_service__(
         self,
@@ -334,6 +339,8 @@ class SpeechToTextInterface:
                             silence_frames = 0
                             speech_frame_count = 0
                             pre_roll.clear()
+                            
+                    time.sleep(0.2)
                 finally:
                     audio_queue.task_done()
 
