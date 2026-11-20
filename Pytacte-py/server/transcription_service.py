@@ -366,3 +366,4 @@ class SpeechToTextInterface:
             thread_flag=thread_flag,
             uid=uid
         )
+
