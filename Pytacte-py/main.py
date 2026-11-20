@@ -1,5 +1,6 @@
 import asyncio
 import atexit
+import copy
 import os
 import queue
 import ssl
@@ -14,7 +15,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from firebase.firebase_auth import FirebaseAuth
 from firebase.firebase_database import FirebaseDatabase, ServerAvailabilityDTO
 from server.load_balancer import LoadBalancer
-from server.transcription_service import SpeechToTextInterface, TrasncriptionResult
+from server.transcription_service import SpeechToTextInterface
 from utils.caddy_manager import CaddyManager
 from utils.ConfigManager import Config
 from utils.Crytography import RSA_Crypto
@@ -49,11 +50,13 @@ model_options = {
                 model_name="Nemo CTC Critinet 512",
                 model_precision="Floating-Point 32",
                 thread_pool=thread_pool,
+                shutdown_flag=flag
             ),
             "Quantised 8": SpeechToTextInterface(
                 model_name="Nemo CTC Critinet 512",
                 model_precision="Quantised 8",
                 thread_pool=thread_pool,
+                shutdown_flag=flag
             ),
         },
         "Nemo CTC Conformer Large": {
@@ -61,11 +64,13 @@ model_options = {
                 model_name="Nemo CTC Conformer Large",
                 model_precision="Floating-Point 32",
                 thread_pool=thread_pool,
+                shutdown_flag=flag
             ),
             "Quantised 8": SpeechToTextInterface(
                 model_name="Nemo CTC Conformer Large",
                 model_precision="Quantised 8",
                 thread_pool=thread_pool,
+                shutdown_flag=flag
             ),
         },
         "Nemo Parakeet TDT-CTC 110M": {
@@ -73,6 +78,7 @@ model_options = {
                 model_name="Nemo Parakeet TDT-CTC 110M",
                 model_precision="Quantised 8",
                 thread_pool=thread_pool,
+                shutdown_flag=flag
             ),
         },
     },
@@ -240,7 +246,7 @@ async def echo(websocket: ServerConnection):
     ASR_FLAG = threading.Event()
     audio_queue = queue.Queue()
     asr_queue = queue.Queue()
-    recognition_result: TrasncriptionResult = TrasncriptionResult()
+    results_queue = queue.Queue()
 
     model: SpeechToTextInterface | None = None
 
@@ -387,8 +393,9 @@ async def echo(websocket: ServerConnection):
                                 model.start_asr_session(
                                     audio_queue=audio_queue,
                                     asr_queue=asr_queue,
-                                    recognition_result=recognition_result,
+                                    results_queue=results_queue,
                                     thread_flag=ASR_FLAG,
+                                    uid=transcription_id
                                 )
 
                                 await websocket.send(
@@ -428,12 +435,18 @@ async def echo(websocket: ServerConnection):
                         model.add_audio_chunk(
                             audio_chunk=message, audio_queue=audio_queue
                         )
-                        recognition_result.result = recognition_result.result.strip()
-                        if recognition_result.result != "":
+                        
+                        
+                        _results_queue = copy.copy(results_queue)
+                        if _results_queue.qsize() > 0:
+                            recognition_result =  _results_queue.get_nowait()
                             await websocket.send(
-                                message=recognition_result.result, text=True
+                                message=recognition_result, text=True
                             )
-                        recognition_result.result = ""
+                        else:
+                            await websocket.send(
+                                message="", text=True
+                            )
                     else:
                         websocket.respond(403, "<Invalid_Message/>")
                         await websocket.close()

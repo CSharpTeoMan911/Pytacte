@@ -11,15 +11,12 @@ from pathlib import Path
 
 import numpy as np
 import sherpa_onnx
+from sherpa_onnx import OfflineStream
 
 # ------------------------------------------------------------
 # Configuration
 # ------------------------------------------------------------
 
-
-class TrasncriptionResult:
-    def __init__(self):
-        self.result = ""
 
 
 class SpeechToTextInterface:
@@ -116,7 +113,7 @@ class SpeechToTextInterface:
     }
 
     def __init__(
-        self, model_name: str, model_precision: str, thread_pool: ThreadPoolExecutor
+        self, model_name: str, model_precision: str, thread_pool: ThreadPoolExecutor, shutdown_flag: threading.Event
     ):
         MODEL_PATH = Path(self.MODELS[model_name]["precision"][model_precision])
         if not MODEL_PATH.exists():
@@ -133,6 +130,11 @@ class SpeechToTextInterface:
             decoding_method="greedy_search",
         )
         self.thread_pool = thread_pool
+        self.session_batches: dict[str, tuple[list[OfflineStream], queue.Queue]] = {}
+        self._batch_condition = threading.Condition()
+
+        self.thread_pool.submit(self.__inference_worker__, shutdown_flag)
+
 
     def __download_model__(self, model_name: str):
         """Download and unpack the selected model under ``data/models``."""
@@ -195,11 +197,41 @@ class SpeechToTextInterface:
         audio = np.concatenate(utterance).astype(np.float32, copy=False)
         asr_queue.put(audio)
 
+    def __inference_worker__(self, flag:threading.Event):
+        while True:
+            with self._batch_condition:
+                while not flag.is_set() and not self.session_batches:
+                    self._batch_condition.wait(timeout=0.1)
+
+                if flag.is_set() and not self.session_batches:
+                    return
+
+                pending_batches = list(self.session_batches.values())
+                self.session_batches.clear()
+
+            streams: list[OfflineStream] = []
+            stream_results: list[queue.Queue] = []
+            for sessions, results in pending_batches:
+                streams.extend(sessions)
+                stream_results.extend([results] * len(sessions))
+
+            if not streams:
+                continue
+            
+
+            self.recognizer.decode_streams(streams)
+
+            for stream, results in zip(streams, stream_results):
+                 text = stream.result.text.strip()
+                 if text:
+                    results.put(text)
+
     def __asr_worker__(
         self,
         asr_queue: queue.Queue,
-        recognition_result: TrasncriptionResult,
+        results_queue: queue.Queue,
         thread_flag: threading.Event,
+        uid:str
     ):
         while not thread_flag.is_set():
             audio = asr_queue.get()
@@ -215,12 +247,17 @@ class SpeechToTextInterface:
                     audio,
                 )
 
-                self.recognizer.decode_stream(stream)
+                with self._batch_condition:
+                    batch = self.session_batches.get(uid)
+                    if batch is None:
+                        sessions = []
+                        batch = (sessions, results_queue)
+                        self.session_batches[uid] = batch
+                    else:
+                        sessions, _ = batch
 
-                text = stream.result.text.strip()
-
-                if text:
-                    recognition_result.result = text
+                    sessions.append(stream)
+                    self._batch_condition.notify()
 
             finally:
                 asr_queue.task_done()
@@ -229,8 +266,9 @@ class SpeechToTextInterface:
         self,
         audio_queue: queue.Queue,
         asr_queue: queue.Queue,
-        recognition_result: TrasncriptionResult,
+        results_queue: queue.Queue,
         thread_flag: threading.Event,
+        uid:str
     ):
         silence_limit = max(1, self.END_SILENCE_MS // self.FRAME_MS)
         minimum_frames = max(1, self.MIN_SPEECH_MS // self.FRAME_MS)
@@ -239,8 +277,9 @@ class SpeechToTextInterface:
         self.thread_pool.submit(
             self.__asr_worker__,
             asr_queue=asr_queue,
-            recognition_result=recognition_result,
+            results_queue=results_queue,
             thread_flag=thread_flag,
+            uid=uid
         )
 
         pre_roll = deque(maxlen=pre_roll_frames)
@@ -257,45 +296,48 @@ class SpeechToTextInterface:
                 except queue.Empty:
                     continue
 
-                if frame.size == 0:
-                    continue
+                try:
+                    if frame.size == 0:
+                        continue
 
-                rms = float(np.sqrt(np.mean(np.square(frame))))
-                is_speech = rms >= self.SPEECH_THRESHOLD
+                    rms = float(np.sqrt(np.mean(np.square(frame))))
+                    is_speech = rms >= self.SPEECH_THRESHOLD
 
-                if not speaking:
-                    pre_roll.append(frame)
+                    if not speaking:
+                        pre_roll.append(frame)
 
-                    if is_speech:
-                        speaking = True
-                        utterance = list(pre_roll)
-                        pre_roll.clear()
+                        if is_speech:
+                            speaking = True
+                            utterance = list(pre_roll)
+                            pre_roll.clear()
 
-                        silence_frames = 0
-                        speech_frame_count = 1
+                            silence_frames = 0
+                            speech_frame_count = 1
 
-                else:
-                    utterance.append(frame)
-
-                    if is_speech:
-                        silence_frames = 0
-                        speech_frame_count += 1
                     else:
-                        silence_frames += 1
+                        utterance.append(frame)
 
-                    if silence_frames >= silence_limit:
-                        self.submit_utterance(
-                            utterance=utterance,
-                            speech_frame_count=speech_frame_count,
-                            minimum_frames=minimum_frames,
-                            asr_queue=asr_queue,
-                        )
+                        if is_speech:
+                            silence_frames = 0
+                            speech_frame_count += 1
+                        else:
+                            silence_frames += 1
 
-                        speaking = False
-                        utterance = []
-                        silence_frames = 0
-                        speech_frame_count = 0
-                        pre_roll.clear()
+                        if silence_frames >= silence_limit:
+                            self.submit_utterance(
+                                utterance=utterance,
+                                speech_frame_count=speech_frame_count,
+                                minimum_frames=minimum_frames,
+                                asr_queue=asr_queue,
+                            )
+
+                            speaking = False
+                            utterance = []
+                            silence_frames = 0
+                            speech_frame_count = 0
+                            pre_roll.clear()
+                finally:
+                    audio_queue.task_done()
 
         finally:
             if speaking and utterance:
@@ -313,14 +355,16 @@ class SpeechToTextInterface:
         self,
         audio_queue: queue.Queue,
         asr_queue: queue.Queue,
-        recognition_result: TrasncriptionResult,
+        results_queue: queue.Queue,
         thread_flag: threading.Event,
+        uid:str
     ):
 
         self.thread_pool.submit(
             self.__transcription_service__,
             audio_queue=audio_queue,
             asr_queue=asr_queue,
-            recognition_result=recognition_result,
+            results_queue= results_queue,
             thread_flag=thread_flag,
+            uid=uid
         )

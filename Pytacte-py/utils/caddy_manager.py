@@ -22,7 +22,7 @@ class CaddyManager:
     DEV_CONFIG_NAME = "Caddyfile-dev.caddy"
     PROD_CONFIG_NAME = "Caddyfile-prod.caddy"
     DEV_CONFIG_CONTENT = """{\n    local_certs\n}\n\n127.0.0.1:8443 {\n    tls internal\n    reverse_proxy 127.0.0.1:80\n}\n"""
-    PROD_CONFIG_CONTENT = """{\n    email admin@example.com\n    renewal_window_ratio 0.5\n}\n\nYOUR_PUBLIC_IPV4:3000 {\n    tls {\n        protocols tls1.2 tls1.3\n        issuer acme https://acme-v02.api.letsencrypt.org/directory {\n            profile shortlived\n        }\n    }\n\n    reverse_proxy 127.0.0.1:5000\n}\n"""
+    PROD_CONFIG_CONTENT = """{\n    email teodormihail07@gmail.com\n    renewal_window_ratio 0.5\n    debug\n    default_sni 141.147.79.201\n}\n\n141.147.79.201:3000 {\n    tls {\n        protocols tls1.2 tls1.3\n        issuer acme https://acme-v02.api.letsencrypt.org/directory {\n            profile shortlived\n        }\n    }\n\n    reverse_proxy 127.0.0.1:5000\n}\n"""
     
     PLATFORMS: dict[str, tuple[str, ...]] = {  # noqa: RUF012
         "dragonfly": ("amd64",),
