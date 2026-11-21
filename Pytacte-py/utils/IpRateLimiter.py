@@ -5,7 +5,7 @@ class RateLimiter:
     """In-memory rate limiter, tracked independently for each IP."""
     
     
-    def __init__(self, requests_per_minute:int=10):
+    def __init__(self, requests_per_minute:int=100):
         self.requests_per_minute = requests_per_minute
         self.client_rates: dict[str, list[float]] = {}
 
