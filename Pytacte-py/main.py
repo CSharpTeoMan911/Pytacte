@@ -98,7 +98,7 @@ def initiate_config() -> object:
 def load_balancing(flag: threading.Event):
     global start_time
 
-    period: int = 30
+    period: int = 5
 
     while not flag.is_set():
         current_time = int(monotonic() - start_time)
@@ -116,13 +116,13 @@ def load_balancing(flag: threading.Event):
                 tls=tls,
                 cpu_usage=0,
             )
-
-            load_balancer.update_cpu_and_ram_metrics(server_id=server_id, data=data)
             
             if loaded_config["general"]["is_load_balancer_node"]:
                 load_balancer.delete_expired_items()
                 load_balancer.sort_servers_by_cpu()
                 start_time = monotonic()
+                
+            load_balancer.update_cpu_and_ram_metrics(server_id=server_id, data=data)
 
 
 async def cert_management():

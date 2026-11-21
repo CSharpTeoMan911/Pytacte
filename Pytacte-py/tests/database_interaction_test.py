@@ -87,13 +87,12 @@ def database(request):
         firebase_admin.delete_app(app)
 
 
-def test_server_and_transcription_job_crud_round_trip(database):
+def test_server_and_transcription_job_create_and_heartbeat_round_trip(database):
     suffix = uuid4().hex
     server_id = f"integration-test-{suffix}"
     user_uid = f"integration-test-user-{suffix}"
     transcription_id = None
     server_created = False
-    cleanup_results = []
     client_server_reference = firebase_db.reference(
         f"/Client_Available_Pytacte_Servers/{server_id}",
         app=database.firebase_app,
@@ -150,30 +149,6 @@ def test_server_and_transcription_job_crud_round_trip(database):
         assert stored_server.cpu_usage == 31.5
         assert stored_client_server["cpu_usage"] == 31.5
 
-        updated_server_data = ServerAvailabilityDTO(
-            server_id=server_id,
-            server_address="127.0.0.1:2",
-            tls=True,
-            cpu_usage=18.75,
-            load_balancer=False,
-            last_heartbeat=stored_server.last_heartbeat,
-        )
-        updated_server_result = database.update_server_availability(
-            updated_server_data
-        )
-        assert updated_server_result[0], updated_server_result[1]
-
-        stored_server = database.get_server_availability(server_id)
-        stored_client_server = client_server_reference.get()
-        assert stored_server is not None
-        assert stored_server.server_address == "127.0.0.1:2"
-        assert stored_server.tls is True
-        assert stored_server.cpu_usage == 18.75
-        assert stored_client_server["server_id"] == server_id
-        assert stored_client_server["server_address"] == "127.0.0.1:2"
-        assert stored_client_server["tls"] is True
-        assert stored_client_server["cpu_usage"] == 18.75
-
         created_job = database.create_transcription_job(user_uid, server_id)
         assert created_job[0], created_job[1]
         transcription_id = created_job[1].transcription_id
@@ -193,20 +168,305 @@ def test_server_and_transcription_job_crud_round_trip(database):
         print(f"Updated heartbeat value: {expected_heartbeat}")
     finally:
         if transcription_id is not None:
-            cleanup_results.append(
-                database.delete_transcription_job(transcription_id)
-            )
+            firebase_db.reference(
+                f"/TranscriptionJobs/{transcription_id}",
+                app=database.firebase_app,
+                url=database.database_url,
+            ).delete()
         client_server_reference.delete()
         if server_created:
-            cleanup_results.append(database.delete_server_availability(server_id))
+            firebase_db.reference(
+                f"/ServerAvailability/{server_id}",
+                app=database.firebase_app,
+                url=database.database_url,
+            ).delete()
 
-    for successful, message in cleanup_results:
-        assert successful, message
     if transcription_id is not None:
         assert database.get_transcription_job(transcription_id) is None
     if server_created:
         assert database.get_server_availability(server_id) is None
     assert client_server_reference.get() is None
+
+
+def test_heartbeat_restores_deleted_client_servers_before_orphan_pruning(
+    database, monkeypatch
+):
+    suffix = uuid4().hex
+    server_ids = [f"heartbeat-prune-test-{suffix}-{index}" for index in range(3)]
+    server_collection = firebase_db.reference(
+        "/ServerAvailability",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+    client_collection = firebase_db.reference(
+        "/Client_Available_Pytacte_Servers",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+    load_balancer = LoadBalancer.__new__(LoadBalancer)
+    load_balancer.database_connection = database
+    monkeypatch.setattr(load_balancer, "get_cpu_metrics", lambda: 25.0)
+
+    try:
+        for index, server_id in enumerate(server_ids):
+            result = database.create_server_availability(
+                ServerAvailabilityDTO(
+                    server_id=server_id,
+                    server_address=f"127.0.0.1:{22000 + index}",
+                    load_balancer=False,
+                    tls=False,
+                    cpu_usage=float(index),
+                )
+            )
+            assert result[0], result[1]
+
+        # Simulate client records disappearing while their server records remain.
+        for server_id in server_ids[:2]:
+            client_collection.child(server_id).delete()
+        assert sum(
+            client_collection.child(server_id).get() is not None
+            for server_id in server_ids
+        ) == 1
+
+        # The normal metrics/heartbeat path should recreate each missing client row.
+        for index, server_id in enumerate(server_ids[:2]):
+            result = load_balancer.update_cpu_and_ram_metrics(
+                server_id,
+                ServerAvailabilityDTO(
+                    server_id=server_id,
+                    server_address=f"127.0.0.1:{22000 + index}",
+                    load_balancer=False,
+                    tls=False,
+                    cpu_usage=0.0,
+                ),
+            )
+            assert result[0], result[1]
+
+        # Orphan pruning must retain the restored rows because every server exists.
+        result = database.delete_orphan_client_servers()
+        assert result[0], result[1]
+
+        server_count = sum(
+            server_collection.child(server_id).get() is not None
+            for server_id in server_ids
+        )
+        client_count = sum(
+            client_collection.child(server_id).get() is not None
+            for server_id in server_ids
+        )
+        assert server_count == client_count == len(server_ids)
+    finally:
+        server_collection.update({server_id: None for server_id in server_ids})
+        client_collection.update({server_id: None for server_id in server_ids})
+
+
+def test_heartbeat_restores_deleted_client_servers_before_cpu_sorting(
+    database, monkeypatch
+):
+    existing_servers = (
+        firebase_db.reference(
+            "/ServerAvailability",
+            app=database.firebase_app,
+            url=database.database_url,
+        )
+        .order_by_key()
+        .limit_to_first(1)
+        .get()
+    )
+    existing_clients = (
+        firebase_db.reference(
+            "/Client_Available_Pytacte_Servers",
+            app=database.firebase_app,
+            url=database.database_url,
+        )
+        .order_by_key()
+        .limit_to_first(1)
+        .get()
+    )
+    if existing_servers or existing_clients:
+        pytest.skip("CPU sorting integration test requires empty server collections")
+
+    suffix = uuid4().hex
+    server_ids = [f"heartbeat-sort-test-{suffix}-{index}" for index in range(4)]
+    cpu_values = [10.0, 20.0, 30.0, 40.0]
+    server_collection = firebase_db.reference(
+        "/ServerAvailability",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+    client_collection = firebase_db.reference(
+        "/Client_Available_Pytacte_Servers",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+    load_balancer = LoadBalancer.__new__(LoadBalancer)
+    load_balancer.database_connection = database
+    heartbeat_cpu_values = iter(cpu_values[2:])
+    monkeypatch.setattr(
+        load_balancer, "get_cpu_metrics", lambda: next(heartbeat_cpu_values)
+    )
+
+    try:
+        for index, (server_id, cpu_usage) in enumerate(
+            zip(server_ids, cpu_values, strict=True)
+        ):
+            result = database.create_server_availability(
+                ServerAvailabilityDTO(
+                    server_id=server_id,
+                    server_address=f"127.0.0.1:{22100 + index}",
+                    load_balancer=False,
+                    tls=False,
+                    cpu_usage=cpu_usage,
+                )
+            )
+            assert result[0], result[1]
+
+        # Remove the two highest-load client rows while keeping their servers.
+        for server_id in server_ids[2:]:
+            client_collection.child(server_id).delete()
+        assert sum(
+            client_collection.child(server_id).get() is not None
+            for server_id in server_ids
+        ) == 2
+
+        # Heartbeats recreate the missing rows and refresh their CPU metrics.
+        for index, server_id in enumerate(server_ids[2:], start=2):
+            result = load_balancer.update_cpu_and_ram_metrics(
+                server_id,
+                ServerAvailabilityDTO(
+                    server_id=server_id,
+                    server_address=f"127.0.0.1:{22100 + index}",
+                    load_balancer=False,
+                    tls=False,
+                    cpu_usage=0.0,
+                ),
+            )
+            assert result[0], result[1]
+
+        load_balancer.sort_servers_by_cpu()
+
+        available_ids = {
+            server_id
+            for server_id in server_ids
+            if client_collection.child(server_id).get() is not None
+        }
+        available_cpu_values = sorted(
+            client_collection.child(server_id).get()["cpu_usage"]
+            for server_id in available_ids
+        )
+        server_count = sum(
+            server_collection.child(server_id).get() is not None
+            for server_id in server_ids
+        )
+
+        assert server_count == len(server_ids)
+        assert len(available_ids) == len(server_ids) // 2
+        assert available_ids == set(server_ids[:2])
+        assert available_cpu_values == cpu_values[:2]
+    finally:
+        server_collection.update({server_id: None for server_id in server_ids})
+        client_collection.update({server_id: None for server_id in server_ids})
+
+
+def test_orphan_prune_then_sort_then_heartbeat_update(database, monkeypatch):
+    server_collection = firebase_db.reference(
+        "/ServerAvailability",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+    client_collection = firebase_db.reference(
+        "/Client_Available_Pytacte_Servers",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+    existing_servers = server_collection.order_by_key().limit_to_first(1).get()
+    existing_clients = client_collection.order_by_key().limit_to_first(1).get()
+    if existing_servers or existing_clients:
+        pytest.skip("Prune/sort integration test requires empty server collections")
+
+    suffix = uuid4().hex
+    server_ids = [f"prune-sort-update-test-{suffix}-{index}" for index in range(4)]
+    orphan_id = f"prune-sort-update-test-{suffix}-orphan"
+    cpu_values = [10.0, 20.0, 30.0, 40.0]
+    load_balancer = LoadBalancer.__new__(LoadBalancer)
+    load_balancer.database_connection = database
+    monkeypatch.setattr(load_balancer, "get_cpu_metrics", lambda: 5.0)
+
+    try:
+        for index, (server_id, cpu_usage) in enumerate(
+            zip(server_ids, cpu_values, strict=True)
+        ):
+            result = database.create_server_availability(
+                ServerAvailabilityDTO(
+                    server_id=server_id,
+                    server_address=f"127.0.0.1:{22200 + index}",
+                    load_balancer=False,
+                    tls=False,
+                    cpu_usage=cpu_usage,
+                )
+            )
+            assert result[0], result[1]
+
+        client_collection.child(orphan_id).set(
+            {
+                "server_id": orphan_id,
+                "server_address": "127.0.0.1:22299",
+                "tls": False,
+                "cpu_usage": 1.0,
+            }
+        )
+
+        # 1. Pruning removes client entries with no corresponding server record.
+        result = database.delete_orphan_client_servers()
+        assert result[0], result[1]
+        assert client_collection.child(orphan_id).get() is None
+        assert sum(
+            client_collection.child(server_id).get() is not None
+            for server_id in server_ids
+        ) == len(server_ids)
+
+        # 2. Sorting keeps the two lowest CPU servers client-visible.
+        load_balancer.sort_servers_by_cpu()
+        sorted_client_ids = {
+            server_id
+            for server_id in server_ids
+            if client_collection.child(server_id).get() is not None
+        }
+        assert sorted_client_ids == set(server_ids[:2])
+
+        # 3. A heartbeat for a server removed by sorting recreates its client row.
+        result = load_balancer.update_cpu_and_ram_metrics(
+            server_ids[3],
+            ServerAvailabilityDTO(
+                server_id=server_ids[3],
+                server_address="127.0.0.1:22203",
+                load_balancer=False,
+                tls=False,
+                cpu_usage=0.0,
+            ),
+        )
+        assert result[0], result[1]
+
+        updated_client_ids = {
+            server_id
+            for server_id in server_ids
+            if client_collection.child(server_id).get() is not None
+        }
+        updated_server = server_collection.child(server_ids[3]).get()
+        updated_client = client_collection.child(server_ids[3]).get()
+        server_count = sum(
+            server_collection.child(server_id).get() is not None
+            for server_id in server_ids
+        )
+
+        assert server_count == len(server_ids)
+        assert updated_client_ids == {server_ids[0], server_ids[1], server_ids[3]}
+        assert len(updated_client_ids) == len(server_ids) // 2 + 1
+        assert updated_server["cpu_usage"] == updated_client["cpu_usage"] == 5.0
+        assert isinstance(updated_server["last_heartbeat"], int)
+    finally:
+        server_collection.update({server_id: None for server_id in server_ids})
+        client_collection.update({server_id: None for server_id in [*server_ids, orphan_id]})
 
 
 def test_sort_servers_by_least_cpu_usage_keeps_lowest_50(database):

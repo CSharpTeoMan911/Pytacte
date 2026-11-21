@@ -1,5 +1,6 @@
 """Firebase Realtime Database access for server-owned records."""
 
+from builtins import ValueError
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -242,20 +243,6 @@ class FirebaseDatabase:
         except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
             return False, f"Failed to update transcription job heartbeat: {error}"
 
-    def delete_transcription_job(
-        self, transcription_id: str
-    ) -> tuple[bool, TranscriptionJobsDTO | str]:
-        """Delete a transcription job and return the deleted DTO."""
-        try:
-            self.__validate_record_id__(transcription_id)
-            record = self.get_transcription_job(transcription_id)
-            if record is None:
-                return False, f"Transcription job {transcription_id} was not found"
-            self.__reference__("TranscriptionJobs", transcription_id).delete()
-            return True, record
-        except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
-            return False, f"Failed to delete transcription job: {error}"
-
     # -------------------------------
     # ServerAvailability table
     # -------------------------------
@@ -372,8 +359,11 @@ class FirebaseDatabase:
 
         if items_count == 0:
             return
+        
+        if items_count <= 1:
+            return
 
-        limit = items_count / 2
+        limit = int(items_count / 2)
 
         limit = 1 if limit == 0 else limit
 
@@ -398,9 +388,10 @@ class FirebaseDatabase:
                 self.__reference__(
                     "Client_Available_Pytacte_Servers", server_id
                 ).delete()
-                limit -= 1
             except FirebaseError, ValueError:
                 pass
+            
+            limit -= 1
 
             if limit == 0:
                 break
@@ -457,81 +448,6 @@ class FirebaseDatabase:
             return True, record
         except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
             return False, f"Failed to update server availability heartbeat: {error}"
-
-    def update_server_availability(
-        self, record: ServerAvailabilityDTO
-    ) -> tuple[bool, ServerAvailabilityDTO | str]:
-        """Update a server record, then synchronize its client-visible entry."""
-        try:
-            if not isinstance(record, ServerAvailabilityDTO):
-                raise TypeError("record must be a ServerAvailabilityDTO")
-            self.__validate_record_id__(record.server_id)
-
-            self.__update__("ServerAvailability", record.server_id, record.to_record())
-
-            client_data = ClientAvailablePytacteServersDTO(
-                server_id=record.server_id,
-                server_address=record.server_address,
-                tls=record.tls,
-                cpu_usage=record.cpu_usage,
-            )
-            try:
-                client_records = (
-                    db.reference(
-                        "/Client_Available_Pytacte_Servers",
-                        app=self.firebase_app,
-                        url=self.database_url,
-                    )
-                    .order_by_child("server_id")
-                    .equal_to(record.server_id)
-                    .get()
-                )
-                if isinstance(client_records, Mapping):
-                    for client_record_id in client_records:
-                        self.__update__(
-                            "Client_Available_Pytacte_Servers",
-                            client_record_id,
-                            client_data.to_record(),
-                        )
-            except (
-                ValueError,
-                TypeError,
-                KeyError,
-                RuntimeError,
-                FirebaseError,
-            ) as error:
-                return (
-                    False,
-                    (
-                        "ServerAvailability was updated, but updating "
-                        "Client_Available_Pytacte_Servers failed: "
-                        f"{error}"
-                    ),
-                )
-
-            updated_record = self.get_server_availability(record.server_id)
-            if updated_record is None:
-                return (
-                    False,
-                    f"Server {record.server_id!r} was updated but could not be read back",
-                )
-            return True, updated_record
-        except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
-            return False, f"Failed to update server availability: {error}"
-
-    def delete_server_availability(
-        self, server_id: str
-    ) -> tuple[bool, ServerAvailabilityDTO | str]:
-        """Delete a server availability record and return the deleted DTO."""
-        try:
-            self.__validate_record_id__(server_id)
-            record = self.get_server_availability(server_id)
-            if record is None:
-                return False, f"Server {server_id!r} was not found"
-            self.__reference__("ServerAvailability", server_id).delete()
-            return True, record
-        except (ValueError, TypeError, KeyError, RuntimeError, FirebaseError) as error:
-            return False, f"Failed to delete server availability record: {error}"
 
     def delete_expired_servers(self) -> tuple[bool, str]:
         """Delete server records whose UTC heartbeat is more than five minutes old."""
