@@ -62,12 +62,18 @@ class LoadBalancer:
         return [True, 'Metrics updated successfully']
     
     
-    def delete_expired_items(self) -> tuple[tuple[bool, bool, bool], tuple[str, str, str]]:
+    def delete_expired_items(self) -> tuple[list[bool | None], list[str]]:
         is_sucessful, message = self.database_connection.delete_expired_transcription_jobs()
         _is_sucessful, _message = self.database_connection.delete_expired_servers()
         __is_sucessful, __message = self.database_connection.delete_orphan_client_servers()
-            
-        return [[is_sucessful, _is_sucessful, __is_sucessful], [message, _message, __message]]
+        ___is_successful, ___message = (
+            self.database_connection.delete_orphan_transcription_jobs()
+        )
+
+        return (
+            [is_sucessful, _is_sucessful, __is_sucessful, ___is_successful],
+            [message, _message, __message, ___message],
+        )
     
     def sort_servers_by_cpu(self):
         self.database_connection.sort_severs_by_least_cpu_usage()

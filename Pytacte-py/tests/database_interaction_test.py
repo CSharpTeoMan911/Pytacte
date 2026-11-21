@@ -11,6 +11,7 @@ Credentials (for example, GOOGLE_APPLICATION_CREDENTIALS).
 from datetime import UTC, datetime, timedelta
 from multiprocessing import get_context
 from random import Random
+from unittest.mock import Mock
 from uuid import uuid4
 
 import firebase_admin
@@ -20,6 +21,24 @@ from firebase_admin import db as firebase_db
 
 from firebase.firebase_database import FirebaseDatabase, ServerAvailabilityDTO
 from server.load_balancer import LoadBalancer
+
+
+def test_delete_expired_items_includes_orphan_transcription_jobs():
+    database = Mock()
+    database.delete_expired_transcription_jobs.return_value = (True, "expired jobs")
+    database.delete_expired_servers.return_value = (True, "expired servers")
+    database.delete_orphan_client_servers.return_value = None
+    database.delete_orphan_transcription_jobs.return_value = (True, "orphan jobs")
+    load_balancer = LoadBalancer.__new__(LoadBalancer)
+    load_balancer.database_connection = database
+
+    result = load_balancer.delete_expired_items()
+
+    assert result == (
+        [True, True, None, True],
+        ["expired jobs", "expired servers", None, "orphan jobs"],
+    )
+    database.delete_orphan_transcription_jobs.assert_called_once_with()
 
 
 def _run_server_sort_in_process(database_url):
@@ -481,6 +500,46 @@ def test_delete_expired_items_removes_server_from_client_collection(database):
                 f"{collection_name}"
             )
 
+    job_collection = firebase_db.reference(
+        "/TranscriptionJobs",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+    client_collection = firebase_db.reference(
+        "/Client_Available_Pytacte_Servers",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+    last_id = None
+    while True:
+        jobs = (
+            job_collection.order_by_key().limit_to_first(20).get()
+            if last_id is None
+            else job_collection.order_by_key().start_at(last_id).limit_to_first(20).get()
+        )
+        if not isinstance(jobs, dict) or not jobs:
+            break
+
+        page_last_id = None
+        for transcription_id, record in jobs.items():
+            page_last_id = transcription_id
+            if transcription_id == last_id:
+                continue
+            job_server_id = record.get("server_id") if isinstance(record, dict) else None
+            if (
+                not isinstance(job_server_id, str)
+                or not job_server_id
+                or client_collection.child(job_server_id).get() is None
+            ):
+                pytest.skip(
+                    "Refusing global cleanup: orphan transcription jobs already "
+                    f"exist (for example {transcription_id})"
+                )
+
+        if page_last_id == last_id:
+            break
+        last_id = page_last_id
+
     server_collection = firebase_db.reference(
         "/ServerAvailability",
         app=database.firebase_app,
@@ -518,7 +577,7 @@ def test_delete_expired_items_removes_server_from_client_collection(database):
         load_balancer.database_connection = database
         result = load_balancer.delete_expired_items()
 
-        assert result[0] == [True, True], result
+        assert result[0] == [True, True, None, True], result
         assert server_collection.child(server_id).get() is None
         assert client_collection.child(server_id).get() is None
     finally:
