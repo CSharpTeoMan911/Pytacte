@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
@@ -77,6 +77,10 @@ async function notificationCloseCallback() {
 
 
 function Login() {
+    const flickerPercent = useRef(90);
+    const switchFlickerOffset = useRef(false);
+    const [linearGradient, setLinearGradient] = useState('linear-gradient(0deg, #2b4a6d 10%, #6d95c4 90%, #2b4a6d 100%)');
+
     const [passwordVisible, setPasswordVisible] = useState(false);
     const [isRegistering, setIsRegistering] = useState(false);
 
@@ -88,10 +92,30 @@ function Login() {
     const [notificationType, setNotificationType] = useState<'success' | 'error' | 'warning' | 'info'>('info');
     const [notificationOpen, setNotificationOpen] = useState(false);
 
+    useEffect(() => {
+        const flickerAnimationInterval = setInterval(() => {
+            if (!switchFlickerOffset.current) {
+                if (flickerPercent.current < 30) {
+                    switchFlickerOffset.current = true;
+                } else {
+                    flickerPercent.current -= 1;
+                }
+            } else if (flickerPercent.current > 90) {
+                switchFlickerOffset.current = false;
+            } else {
+                flickerPercent.current += 1;
+            }
+
+            setLinearGradient(`linear-gradient(0deg, #2b4a6d 10%, #19232e ${flickerPercent.current}%, #2b4a6d 100%)`);
+        }, 50);
+
+        return () => clearInterval(flickerAnimationInterval);
+    }, []);
+
 
 
     return (
-        <RootPanel background_color="#778694">
+        <RootPanel style={{ background: linearGradient }}>
             {notificationOpen && (
                 <NotificationSystem
                     notificationText={notificationText}
