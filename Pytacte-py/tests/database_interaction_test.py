@@ -273,6 +273,89 @@ def test_sort_servers_by_least_cpu_usage_keeps_lowest_50(database):
         client_collection.update({server_id: None for server_id in server_ids})
 
 
+def test_load_balancer_rebalances_after_server_load_increases(database):
+    suffix = uuid4().hex
+    initial_server_id = f"load-balance-test-{suffix}-initial"
+    added_server_ids = [
+        f"load-balance-test-{suffix}-added-{index}" for index in range(3)
+    ]
+    server_ids = [initial_server_id, *added_server_ids]
+    server_collection = firebase_db.reference(
+        "/ServerAvailability",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+    client_collection = firebase_db.reference(
+        "/Client_Available_Pytacte_Servers",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+
+    if (
+        server_collection.order_by_key().limit_to_first(1).get()
+        or client_collection.order_by_key().limit_to_first(1).get()
+    ):
+        pytest.skip(
+            "Run against empty server collections; sorting prunes the entire "
+            "client-available collection"
+        )
+
+    heartbeat = int(datetime.now(UTC).strftime("%Y%m%d%H%M"))
+    initial_record = {
+        "server_id": initial_server_id,
+        "server_address": "127.0.0.1:21000",
+        "load_balancer": False,
+        "tls": False,
+        "cpu_usage": 1.0,
+        "last_heartbeat": heartbeat,
+    }
+    added_cpu_values = [10.0, 20.0, 30.0]
+    added_records = {
+        server_id: {
+            "server_id": server_id,
+            "server_address": f"127.0.0.1:{21001 + index}",
+            "load_balancer": False,
+            "tls": False,
+            "cpu_usage": cpu_usage,
+            "last_heartbeat": heartbeat,
+        }
+        for index, (server_id, cpu_usage) in enumerate(
+            zip(added_server_ids, added_cpu_values, strict=True)
+        )
+    }
+
+    try:
+        server_collection.child(initial_server_id).set(initial_record)
+        assert server_collection.child(initial_server_id).get()["cpu_usage"] == 1.0
+
+        server_collection.child(initial_server_id).update({"cpu_usage": 95.0})
+        assert server_collection.child(initial_server_id).get()["cpu_usage"] == 95.0
+
+        server_collection.update(added_records)
+        assert all(server_collection.child(server_id).get() for server_id in added_server_ids)
+
+        load_balancer = LoadBalancer.__new__(LoadBalancer)
+        load_balancer.database_connection = database
+        load_balancer.sort_servers_by_cpu()
+
+        client_records = {
+            server_id: client_collection.child(server_id).get()
+            for server_id in server_ids
+        }
+        available_ids = {
+            server_id for server_id, record in client_records.items() if record is not None
+        }
+        expected_available_ids = set(added_server_ids[:2])
+
+        assert available_ids == expected_available_ids
+        assert sorted(
+            client_records[server_id]["cpu_usage"] for server_id in available_ids
+        ) == [10.0, 20.0]
+    finally:
+        server_collection.update({server_id: None for server_id in server_ids})
+        client_collection.update({server_id: None for server_id in server_ids})
+
+
 def test_delete_expired_servers_removes_expired_and_preserves_fresh(database):
     suffix = uuid4().hex
     server_ids = [f"expired-test-{suffix}-{index:03d}" for index in range(100)]
@@ -544,3 +627,102 @@ def test_delete_expired_transcription_jobs_preserves_fresh_jobs(database):
         )
     finally:
         collection.update({transcription_id: None for transcription_id in test_records})
+
+
+def test_delete_orphan_transcription_jobs_removes_only_jobs_with_unavailable_servers(
+    database,
+):
+    suffix = uuid4().hex
+    job_ids = [f"orphan-job-test-{suffix}-{index:03d}" for index in range(25)]
+    server_ids = [f"orphan-job-server-test-{suffix}-{index:03d}" for index in range(25)]
+    job_collection = firebase_db.reference(
+        "/TranscriptionJobs",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+    client_server_collection = firebase_db.reference(
+        "/Client_Available_Pytacte_Servers",
+        app=database.firebase_app,
+        url=database.database_url,
+    )
+
+    # The cleanup scans the whole live table, so don't let the test remove
+    # unrelated orphan jobs that were already present before it started.
+    existing_orphans = []
+    last_id = None
+    while True:
+        existing_jobs = (
+            job_collection.order_by_key().limit_to_first(20).get()
+            if last_id is None
+            else job_collection.order_by_key().start_at(last_id).limit_to_first(20).get()
+        )
+        if not isinstance(existing_jobs, dict) or not existing_jobs:
+            break
+
+        page_last_id = None
+        for transcription_id, record in existing_jobs.items():
+            page_last_id = transcription_id
+            if transcription_id == last_id:
+                continue
+            server_id = record.get("server_id") if isinstance(record, dict) else None
+            if (
+                not isinstance(server_id, str)
+                or not server_id
+                or client_server_collection.child(server_id).get() is None
+            ):
+                existing_orphans.append(transcription_id)
+
+        if page_last_id == last_id:
+            break
+        last_id = page_last_id
+
+    if existing_orphans:
+        pytest.skip(
+            "Refusing global orphan cleanup because unrelated orphan jobs already "
+            f"exist: {existing_orphans[:5]}"
+        )
+
+    retained_ids = set(job_ids[1::2])
+    test_jobs = {
+        job_id: {
+            "transcription_id": job_id,
+            "uuid": f"orphan-job-user-{suffix}",
+            "server_id": server_ids[index],
+        }
+        for index, job_id in enumerate(job_ids)
+    }
+    available_server_records = {
+        server_ids[index]: {
+            "server_id": server_ids[index],
+            "server_address": f"127.0.0.1:{22000 + index}",
+            "tls": False,
+            "cpu_usage": 0.0,
+        }
+        for index in range(1, len(server_ids), 2)
+    }
+
+    try:
+        client_server_collection.update(available_server_records)
+        job_collection.update(test_jobs)
+
+        seeded_ids = [
+            job_id for job_id in job_ids if job_collection.child(job_id).get() is not None
+        ]
+        assert set(seeded_ids) == set(job_ids)
+
+        result = database.delete_orphan_transcription_jobs()
+        assert result[0], result[1]
+
+        remaining_ids = {
+            job_id for job_id in job_ids if job_collection.child(job_id).get() is not None
+        }
+        assert remaining_ids == retained_ids
+        assert all(
+            client_server_collection.child(server_ids[index]).get() is not None
+            for index in range(1, len(server_ids), 2)
+        )
+    finally:
+        job_collection.update({job_id: None for job_id in job_ids})
+        client_server_collection.update(
+            {server_id: None for server_id in available_server_records}
+        )

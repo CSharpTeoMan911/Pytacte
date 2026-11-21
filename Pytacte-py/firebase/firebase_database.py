@@ -641,6 +641,72 @@ class FirebaseDatabase:
             else:
                 last_id = _last_id
 
+    def delete_orphan_transcription_jobs(self) -> tuple[bool, str]:
+        """Delete jobs whose assigned server is no longer client-available."""
+        last_id = None
+        deleted_count = 0
+
+        while True:
+            jobs = (
+                db.reference(
+                    "/TranscriptionJobs",
+                    app=self.firebase_app,
+                    url=self.database_url,
+                )
+                .order_by_key()
+                .limit_to_first(20)
+                .get()
+                if last_id is None
+                else db.reference(
+                    "/TranscriptionJobs",
+                    app=self.firebase_app,
+                    url=self.database_url,
+                )
+                .order_by_key()
+                .start_at(last_id)
+                .limit_to_first(20)
+                .get()
+            )
+
+            if not isinstance(jobs, Mapping) or not jobs:
+                break
+
+            _last_id = None
+            for transcription_id, record in jobs.items():
+                _last_id = transcription_id
+
+                # start_at is inclusive; the previous page's last key is repeated.
+                if transcription_id == last_id:
+                    continue
+
+                try:
+                    server_id = record.get("server_id") if isinstance(record, Mapping) else None
+                    available_server = (
+                        self.__reference__(
+                            "Client_Available_Pytacte_Servers", server_id
+                        ).get()
+                        if isinstance(server_id, str) and server_id
+                        else None
+                    )
+
+                    if available_server is None:
+                        self.__reference__(
+                            "TranscriptionJobs", transcription_id
+                        ).delete()
+                        deleted_count += 1
+                except (FirebaseError, ValueError, TypeError, KeyError, RuntimeError) as error:
+                    return (
+                        False,
+                        (f"Failed to delete orphan transcription jobs after deleting "
+                        f"{deleted_count}: {error}"),
+                    )
+
+            if _last_id == last_id:
+                break
+            last_id = _last_id
+
+        return True, f"Deleted {deleted_count} orphan transcription job(s)"
+
     def delete_expired_transcription_jobs(self) -> tuple[bool, str]:
         """Delete transcription jobs whose UTC heartbeat is over five minutes old."""
 
