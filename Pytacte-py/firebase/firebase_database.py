@@ -575,8 +575,9 @@ class FirebaseDatabase:
 
         return True, f"Deleted {deleted_count} expired server record(s)"
 
-    def delete_orphan_client_servers(self):
+    def delete_orphan_client_servers(self) -> tuple[bool, str]:
         last_id = None
+        deleted_count = 0
 
         while True:
             items = (
@@ -630,6 +631,7 @@ class FirebaseDatabase:
                             self.__reference__(
                                 "Client_Available_Pytacte_Servers", server_id
                             ).delete()
+                            deleted_count += 1
 
                     except FirebaseError, ValueError:
                         pass
@@ -640,6 +642,8 @@ class FirebaseDatabase:
                 break
             else:
                 last_id = _last_id
+
+        return True, f"Deleted {deleted_count} orphan client server(s)"
 
     def delete_orphan_transcription_jobs(self) -> tuple[bool, str]:
         """Delete jobs whose assigned server is no longer client-available."""

@@ -27,7 +27,10 @@ def test_delete_expired_items_includes_orphan_transcription_jobs():
     database = Mock()
     database.delete_expired_transcription_jobs.return_value = (True, "expired jobs")
     database.delete_expired_servers.return_value = (True, "expired servers")
-    database.delete_orphan_client_servers.return_value = None
+    database.delete_orphan_client_servers.return_value = (
+        True,
+        "orphan client servers",
+    )
     database.delete_orphan_transcription_jobs.return_value = (True, "orphan jobs")
     load_balancer = LoadBalancer.__new__(LoadBalancer)
     load_balancer.database_connection = database
@@ -35,8 +38,13 @@ def test_delete_expired_items_includes_orphan_transcription_jobs():
     result = load_balancer.delete_expired_items()
 
     assert result == (
-        [True, True, None, True],
-        ["expired jobs", "expired servers", None, "orphan jobs"],
+        [True, True, True, True],
+        [
+            "expired jobs",
+            "expired servers",
+            "orphan client servers",
+            "orphan jobs",
+        ],
     )
     database.delete_orphan_transcription_jobs.assert_called_once_with()
 
@@ -577,7 +585,7 @@ def test_delete_expired_items_removes_server_from_client_collection(database):
         load_balancer.database_connection = database
         result = load_balancer.delete_expired_items()
 
-        assert result[0] == [True, True, None, True], result
+        assert result[0] == [True, True, True, True], result
         assert server_collection.child(server_id).get() is None
         assert client_collection.child(server_id).get() is None
     finally:
