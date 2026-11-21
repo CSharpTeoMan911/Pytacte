@@ -32,10 +32,6 @@ For the deployment in production and/or development environments, the client app
 
 ## Features
 
-### Live microphone transcription
-
-
-
 ### Speech-to-Text model selection
 _____________________________
 
