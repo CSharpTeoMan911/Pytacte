@@ -21,11 +21,12 @@ import LiveWaveformVisualiser from '#/components/LiveWaveformVisualiser'
 import CodeMirror from '@uiw/react-codemirror'
 import { EditorView } from '@codemirror/view'
 import { StartLiveAudioCapture, StopAudioCapture } from '../utils/LiveAudioCapture'
-import { getJwtToken } from '../firebase/firebase_auth'
+import { getJwtToken, getAuthProvider, getUserEmail, getUid } from '../firebase/firebase_auth'
 import { jsPDF } from "jspdf";
 import '../../fonts/Tiny5-Duo-normal.js';
 import NotificationSystem from "../components/NotificationSystem.js"
 import { getAvailableServer } from '#/firebase/firebase_database.js'
+import AccountsPanel from '#/components/AccountsPanel.js'
 
 
 const transcriptionEditorTheme = EditorView.theme({
@@ -67,7 +68,7 @@ export const Route = createFileRoute('/')({ component: Home })
 
 
 function Home() {
-  
+
   const targetInitMarker = '>>>';
   const targetInitLabel = ' init pytacte';
 
@@ -125,11 +126,11 @@ function Home() {
   const model = useRef<string>('');
   const precision = useRef<string>('');
 
-  const availableModels:string[] = ['Nemo CTC Critinet 512', 'Nemo CTC Conformer Large', 'Nemo Parakeet TDT-CTC 110M']
+  const availableModels: string[] = ['Nemo CTC Critinet 512', 'Nemo CTC Conformer Large', 'Nemo Parakeet TDT-CTC 110M']
   const [currentModel, setCurrentModel] = useState<string>(availableModels[0]);
 
-  const availablePrecisions:string[] = ['Quantised 8', 'Floating-Point 32']
-  const minAvailablePrecisions:string[] = ['Quantised 8']
+  const availablePrecisions: string[] = ['Quantised 8', 'Floating-Point 32']
+  const minAvailablePrecisions: string[] = ['Quantised 8']
   const [currentPrecision, setCurrentPrecision] = useState<string>(availablePrecisions[0]);
 
   const [modelSelectionEnabled, setModelSelectionEnabled] = useState(true);
@@ -148,6 +149,13 @@ function Home() {
   const [clearTranscription, setClearTranscription] = useState<boolean>();
 
 
+  const [accountPanelOpen, setAccountPanelOpen] = useState<boolean>(false);
+  const [accountEmail, setAccountEmail] = useState<string>('');
+  const [accountSignInMethod, setAccountSignInMethod] = useState<string>('Email');
+  const [deleteAccount, setDeleteAccount] = useState<boolean>(false);
+  const deleteAccountRef = useRef<boolean>(false)
+
+
   async function notificationCloseCallback() {
     if (notificationType === 'error' &&
       (notificationText === 'Invalid log in session.' ||
@@ -156,6 +164,12 @@ function Home() {
 
       logoutAccount();
       window.location.href = '/auth';
+    }
+    else{
+      if(deleteAccountRef){
+        logoutAccount();
+        window.location.href = '/auth';
+      }
     }
   }
 
@@ -317,14 +331,17 @@ function Home() {
             }
           }
         } else {
-
-
           if (!jwtValidated.current) {
             if (payload === '<JWT_Valid/>') {
               jwtValidated.current = true;
 
               if (!modelParamatersValidatationProcedureInitiated.current) {
-                webSocketStreaming?.postMessage(`<STT_Model>${model.current}</STT_Model><STT_Model_Precision>${precision.current}</STT_Model_Precision>`);
+                if (!deleteAccountRef.current) {
+                  webSocketStreaming?.postMessage(`<STT_Model>${model.current}</STT_Model><STT_Model_Precision>${precision.current}</STT_Model_Precision>`);
+                }
+                else {
+                  webSocketStreaming?.postMessage('<Delete_Account/>')
+                }
                 modelParamatersValidatationProcedureInitiated.current = true;
               }
             }
@@ -389,30 +406,46 @@ function Home() {
             }
           }
           else {
-            if (!modelParamatersValidated.current) {
+            if (!deleteAccountRef.current) {
+              if (!modelParamatersValidated.current) {
 
-              if (payload === '<Valid_Model_Parameters/>') {
-                modelParamatersValidated.current = true;
-                setMessageExchangePending(false);
+                if (payload === '<Valid_Model_Parameters/>') {
+                  modelParamatersValidated.current = true;
+                  setMessageExchangePending(false);
+                }
+                else if (payload === '<Invalid_Model_Parameters/>') {
+                  setMessageExchangePending(false);
+                  setNotificationType('error');
+                  setNotificationText('Invalid model name or model precision.');
+                  setNotificationOpen(true);
+                  StopCapture();
+                }
               }
-              else if (payload === '<Invalid_Model_Parameters/>') {
-                setMessageExchangePending(false);
-                setNotificationType('error');
-                setNotificationText('Invalid model name or model precision.');
-                setNotificationOpen(true);
-                StopCapture();
+              else {
+                const _message = String(payload).trim();
+
+                if (_message !== '') {
+                  const terminator = isSymbol(_message[_message.length - 1]) ? '' : '.';
+                  const message = `${_message[0].toUpperCase()}${_message.slice(1, _message.length)}${terminator} `;
+                  transcription.current += message;
+                  console.log(`[${transcription.current}]`);
+                  setTranscriptionValue(transcription.current);
+                }
               }
             }
             else {
-              const _message = String(payload).trim();
-
-              if (_message !== '') {
-                const terminator = isSymbol(_message[_message.length - 1]) ? '' : '.';
-                const message = `${_message[0].toUpperCase()}${_message.slice(1, _message.length)}${terminator} `;
-                transcription.current += message;
-                console.log(`[${transcription.current}]`);
-                setTranscriptionValue(transcription.current);
+              if (payload === '<Account_Successfully_Deleted/>') {
+                setMessageExchangePending(false);
+                setNotificationType('success');
+                setNotificationText('Account successfully deleted');
               }
+              else {
+                setMessageExchangePending(false);
+                setNotificationType('error');
+                setNotificationText('Internal server error');
+              }
+              setNotificationOpen(true);
+              StopCapture();
             }
           }
         }
@@ -625,6 +658,31 @@ function Home() {
     }
   }, [currentPrecision])
 
+  useEffect(() => {
+    if (accountPanelOpen) {
+      getAuthProvider().then((provider) => {
+        const email = getUserEmail();
+
+        if (email && provider) {
+          setAccountEmail(email);
+          setAccountSignInMethod(provider);
+        }
+
+      })
+    }
+  }, [accountPanelOpen])
+
+  useEffect(() => {
+    if (deleteAccount) {
+      const uid = getUid();
+
+      if (uid) {
+        deleteAccountRef.current = true;
+        setWebSocketStreaming(new Worker(new URL("../utils/WebSocketWorker.js", import.meta.url)));
+      }
+    }
+  }, [deleteAccount])
+
   if (!authReady) return null
 
   return (
@@ -633,6 +691,10 @@ function Home() {
         @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=Micro+5&family=Tiny5+Duo:ital,wght@0,100..900;1,100..900&display=swap');
       </style>
+
+      {accountPanelOpen && (
+        <AccountsPanel email={accountEmail} provider={accountSignInMethod} backgroundColor='rgba(0,61,110,0.6)' secondaryColor='rgb(0,61,110)' opacity={1} elevation={3} zIndex={3} setOpenPanel={setAccountPanelOpen} setDeleteAccount={setDeleteAccount} />
+      )}
 
       {notificationOpen && (
         <NotificationSystem
@@ -651,11 +713,13 @@ function Home() {
         appBarSecondaryTextColor="#0a70ac"
         authButtonTextColor="#003b5f"
         routesInfo={[
+          ['', 'Account'],
           ['/', 'Transcription'],
           ['/about', 'About'],
           ['/auth', '[auth]'],
         ]}
-        zIndex={expandTranscriptionPanel ? -1 : undefined}
+        zIndex={accountPanelOpen ? 1 : (expandTranscriptionPanel ? -1 : undefined)}
+        accountPopup={setAccountPanelOpen}
       />
 
       <DeviceSelector desktopChildren={
@@ -832,14 +896,14 @@ function Home() {
         </div>}
         mobileChildren={
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', minHeight: 'calc(100dvh - 128px)', boxSizing: 'border-box', padding: '12px' }}>
-            <div style={{ display: 'flex', flexDirection:'row', justifyContent:'end', alignItems: 'center', minHeight: '44px' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'end', alignItems: 'center', minHeight: '44px' }}>
               <IconButton aria-label={mobileSettingsOpen ? 'Close model settings' : 'Open model settings'} color='primary' onClick={() => { setMobileSettingsOpen(!mobileSettingsOpen) }} sx={{ color: '#38a3e0', minWidth: '44px', minHeight: '44px' }}>
                 <SettingsIcon />
               </IconButton>
             </div>
 
             {mobileSettingsOpen && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px', borderRadius: '12px', backgroundColor: '#003b5f', textAlign: 'left', boxShadow: '1px 0px 10px #54b9f3',}}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px', borderRadius: '12px', backgroundColor: '#003b5f', textAlign: 'left', boxShadow: '1px 0px 10px #54b9f3', }}>
                 <CustomSelectionField label='Model' size='small' minWidth='80%' menuBackgroundColor='#003b5f' textColor='#78bee7' borderColor='#0876b5' menuContents={['Nemo CTC Critinet 512', 'Nemo CTC Conformer Large', 'Nemo Parakeet TDT-CTC 110M']} enabled={modelSelectionEnabled} onChange={setCurrentModel} />
                 <CustomSelectionField label='Model Precision' size='small' minWidth='80%' menuBackgroundColor='#003b5f' textColor='#78bee7' borderColor='#0876b5' menuContents={currentModel === 'Nemo Parakeet TDT-CTC 110M' ? ['Quantised 8'] : ['Quantised 8', 'Floating-Point 32']} enabled={precisionSelectionEnabled} onChange={setCurrentPrecision} />
               </div>
@@ -847,7 +911,7 @@ function Home() {
 
             <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 'min(52vh, 420px)', minWidth: 0, overflow: 'hidden', borderRadius: '16px', backgroundColor: '#003b5f', boxShadow: '1px 0px 10px #54b9f3', textAlign: 'left' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '12px 12px 8px' }}>
-                <div/>
+                <div />
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: muteAudio ? '#9be3b0' : '#c3d7e3', fontFamily: 'Roboto Mono, monospace', fontSize: '0.7rem' }}>
                   <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: messageExchangePending ? '#55c779' : '#8ca8b7' }} />
                   {messageExchangePending ? 'LIVE' : 'READY'}

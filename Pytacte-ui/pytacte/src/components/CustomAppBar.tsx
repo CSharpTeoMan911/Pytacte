@@ -23,10 +23,11 @@ type Porps = {
   logoWidth?: number | string;
   logoHeight?: number | string;
   routesInfo?: RouteInfo[];
-  zIndex?: number
+  zIndex?: number;
+  accountPopup?: (open:boolean) => void
 };
 
-export default function CustomAppBar({ appBarTextColor, appBarSecondaryTextColor, appBarColor, logoWidth, logoHeight, routesInfo, zIndex }: Porps) {
+export default function CustomAppBar({ appBarTextColor, appBarSecondaryTextColor, appBarColor, logoWidth, logoHeight, routesInfo, zIndex, accountPopup }: Porps) {
 
   const [pages, setPages] = useState<RouteInfo[]>(routesInfo ?? [['/', 'Home']]);
   //const []
@@ -83,13 +84,20 @@ export default function CustomAppBar({ appBarTextColor, appBarSecondaryTextColor
         console.error('Logout failed:', message);
         return;
       }
+      window.location.href = path;
     }
-
-    window.location.href = path;
+    else {
+      if (label == 'Account') {
+        if (accountPopup) accountPopup(true);
+      }
+      else {
+        window.location.href = path;
+      }
+    }
   };
 
   return (
-    <AppBar position="static" sx={{ backgroundColor: appBarColor, color: appBarTextColor, zIndex: zIndex ? zIndex : (theme) => theme.zIndex.appBar}}>
+    <AppBar position="static" sx={{ backgroundColor: appBarColor, color: appBarTextColor, zIndex: zIndex ? zIndex : (theme) => theme.zIndex.appBar }}>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap');
       </style>

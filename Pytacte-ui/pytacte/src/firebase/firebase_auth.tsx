@@ -165,3 +165,28 @@ export async function getJwtToken(): Promise<compositeResult> {
         return [false, (error as Error).message]
     }
 }
+
+export function getUserEmail():string | null | undefined{
+    const email = auth.currentUser?.email;
+    return email;
+}
+
+export async function getAuthProvider(): Promise<string | null> {
+    const firebaseClaims = auth.currentUser
+    ? (await auth.currentUser.getIdTokenResult()).claims.firebase as
+        | { sign_in_provider?: string }
+        | undefined
+    : undefined;
+    
+    const provider =
+        firebaseClaims?.sign_in_provider === 'password' ? 'Email'
+        : firebaseClaims?.sign_in_provider === 'google.com' ? 'Gmail'
+        : null;
+
+    return provider
+}
+
+export function getUid(): string | undefined{
+    const uid = auth.currentUser?.uid;
+    return uid
+}

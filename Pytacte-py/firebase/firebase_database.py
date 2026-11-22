@@ -630,7 +630,7 @@ class FirebaseDatabase:
     def delete_expired_transcription_jobs(self) -> tuple[bool, str]:
         """Delete transcription jobs whose UTC heartbeat is over five minutes old."""
 
-        expired_before = datetime.now(UTC) - timedelta(minutes=5)
+        expired_before = datetime.now(UTC) - timedelta(minutes=1)
         cutoff = int(expired_before.strftime("%Y%m%d%H%M"))
         deleted_count = 0
 

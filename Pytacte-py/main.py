@@ -388,11 +388,15 @@ async def echo(websocket: ServerConnection):
                                 is_successful, response = (  # noqa: RUF059
                                     database.delete_transcription_jobs_for_user(uid=uid)
                                 )
+                                
+                                print('response: ', response)
 
                                 if is_successful:
                                     _is_successful, _response = auth.delete_account(
                                         uid=uid
                                     )
+                                    
+                                    print('_response:', _response)
 
                                     if _is_successful:
                                         await websocket.send(
