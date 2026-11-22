@@ -88,6 +88,8 @@ export default function CustomAppBar({ appBarTextColor, appBarSecondaryTextColor
     }
     else {
       if (label == 'Account') {
+        setAnchorElUser(null);
+        setAnchorElNav(null);
         if (accountPopup) accountPopup(true);
       }
       else {
