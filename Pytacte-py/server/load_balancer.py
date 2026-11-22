@@ -52,14 +52,14 @@ class LoadBalancer:
             is_successful, payload = self.database_connection.update_server_availability_heartbeat(data=data)
 
             if not is_successful:
-                return [is_successful, payload]
+                return (is_successful, payload)
         else:
             is_successful, payload = self.database_connection.create_server_availability(record=data)
             
             if not is_successful:
-                return [is_successful, payload]
+                return (is_successful, payload)
         
-        return [True, 'Metrics updated successfully']
+        return (True, 'Metrics updated successfully')
     
     
     def delete_expired_items(self) -> tuple[list[bool | None], list[str]]:

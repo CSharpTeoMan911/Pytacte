@@ -6,7 +6,6 @@ from server.transcription_service import SpeechToTextInterface
 
 
 def test_transcription_service_with_helloworld_wav():
-    shutdown_flag = threading.Event()
     session_flag = threading.Event()
     results_queue = queue.Queue()
     audio_queue = queue.Queue()
@@ -17,14 +16,12 @@ def test_transcription_service_with_helloworld_wav():
         service = SpeechToTextInterface(
             model_name="Nemo CTC Critinet 512",
             model_precision="Quantised 8",
-            shutdown_flag=shutdown_flag,
         )
         service.start_asr_session(
             audio_queue=audio_queue,
             asr_queue=asr_queue,
             results_queue=results_queue,
             thread_flag=session_flag,
-            uid="test-session",
         )
 
         with wave.open("HelloWorld.wav", "rb") as wav_file:
@@ -43,8 +40,7 @@ def test_transcription_service_with_helloworld_wav():
 
         assert transcription
         assert "hello" in transcription or "world" in transcription
-        assert audio_queue.unfinished_tasks == 0
+        asr_queue.join()
         assert asr_queue.unfinished_tasks == 0
     finally:
         session_flag.set()
-        shutdown_flag.set()

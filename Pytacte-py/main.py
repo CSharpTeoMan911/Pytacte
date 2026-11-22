@@ -116,12 +116,12 @@ def load_balancing(flag: threading.Event):
                 tls=tls,
                 cpu_usage=0,
             )
-            
+
             if loaded_config["general"]["is_load_balancer_node"]:
                 load_balancer.delete_expired_items()
                 load_balancer.sort_servers_by_cpu()
                 start_time = monotonic()
-                
+
             load_balancer.update_cpu_and_ram_metrics(server_id=server_id, data=data)
 
 
@@ -189,12 +189,27 @@ def heartbeat_manager_wrapper(coroutine):
     return asyncio.run(coroutine)
 
 
-
 async def echo(websocket: ServerConnection):
 
     client_ip: str | None
 
     transcription_id: str | None
+
+    uid: str | None
+
+    stt_model = ""
+    model_precision = ""
+
+    delete_account_label = "<Delete_Account/>"
+
+    auth_label = "<Authorisation_Token>"
+    auth_label_end = "</Authorisation_Token>"
+
+    model_label = "<STT_Model>"
+    model_label_end = "</STT_Model>"
+
+    model_precision_label = "<STT_Model_Precision>"
+    model_precision_label_end = "</STT_Model_Precision>"
 
     last_heartbeat = monotonic()
 
@@ -230,18 +245,6 @@ async def echo(websocket: ServerConnection):
     try:
         async for message in websocket:
             try:
-                stt_model = ""
-                model_precision = ""
-
-                auth_label = "<Authorisation_Token>"
-                auth_label_end = "</Authorisation_Token>"
-
-                model_label = "<STT_Model>"
-                model_label_end = "</STT_Model>"
-
-                model_precision_label = "<STT_Model_Precision>"
-                model_precision_label_end = "</STT_Model_Precision>"
-
                 if (
                     not jwt_checked
                     and (time.monotonic() - connection_initiation) >= AUTH_CHECKUP_TIME
@@ -379,6 +382,39 @@ async def echo(websocket: ServerConnection):
                                 )
                                 await websocket.close()
 
+                    else:
+                        if message == delete_account_label:
+                            if uid is not None:
+                                is_successful, response = (  # noqa: RUF059
+                                    database.delete_transcription_jobs_for_user(uid=uid)
+                                )
+
+                                if is_successful:
+                                    _is_successful, _response = auth.delete_account(
+                                        uid=uid
+                                    )
+
+                                    if _is_successful:
+                                        await websocket.send(
+                                            message="<Account_Successfully_Deleted/>",
+                                            text=True,
+                                        )
+                                    else:
+                                        await websocket.send(
+                                            message="<Internal_Server_Error/>",
+                                            text=True,
+                                        )
+                                else:
+                                    await websocket.send(
+                                        message="<Internal_Server_Error/>",
+                                        text=True,
+                                    )
+
+                                await websocket.close()
+
+                            else:
+                                websocket.respond(403, "<Invalid_Message/>")
+                                await websocket.close()
                         else:
                             await websocket.send(
                                 message="<Invalid_Model_Parameters/>", text=True
@@ -396,10 +432,12 @@ async def echo(websocket: ServerConnection):
                         if elapsed > 60:
                             threading.Thread(
                                 target=heartbeat_manager_wrapper,
-                                args=(transciption_session_heartbeat_manager(
-                                    transcription_id=transcription_id,
-                                    websocket=websocket,
-                                )),
+                                args=(
+                                    transciption_session_heartbeat_manager(
+                                        transcription_id=transcription_id,
+                                        websocket=websocket,
+                                    )
+                                ),
                             ).start()
 
                         model.add_audio_chunk(
@@ -562,7 +600,7 @@ async def main():
     except Exception as e:
         print(f"--> [Error: {e}]")
         raise
-    
+
     finally:
         if loaded_config["security"]["reverse_proxy"] and caddy.server_pid is not None:
             is_sucessful, message = caddy.shutdown_server()

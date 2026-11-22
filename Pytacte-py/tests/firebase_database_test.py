@@ -255,7 +255,14 @@ def test_server_heartbeat_updates_existing_client_record(database, monkeypatch):
     update.assert_called_once_with(
         "ServerAvailability",
         "server-1",
-        {"cpu_usage": 25.5, "last_heartbeat": expected_heartbeat},
+        {
+            "server_id": "server-1",
+            "server_address": "192.0.2.1:443",
+            "load_balancer": False,
+            "tls": True,
+            "cpu_usage": 25.5,
+            "last_heartbeat": expected_heartbeat,
+        },
     )
     client_reference.update.assert_called_once_with(
         {

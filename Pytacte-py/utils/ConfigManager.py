@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 
 
@@ -58,34 +57,33 @@ class Config:
             }
         }
 
-    def __delete_config_file__(self, file_name):
-        path = Path(Path.cwd(), "data", file_name)
-        os.remove(path=path)
+    @staticmethod
+    def _config_path(file_name: str | Path) -> Path:
+        path = Path(file_name)
+        if path.is_absolute():
+            return path
+        return Path.cwd() / "data" / path
 
-    def create_config_file(self, file_name: str) -> ConfigResult:
+    def create_config_file(self, file_name: str | Path) -> ConfigResult:
         try:
-            path = Path(Path.cwd(), "data", file_name)
-
-            if path.exists():
-                self.__delete_config_file__()
-
-            with open(path, "wb") as fw:
-                fw.write(json.dumps(self.config, indent=4).encode("utf-8"))
-                fw.flush()
-                return ConfigResult(
-                    True, "Configuration generation successful", self.config
-                )
+            path = self._config_path(file_name)
+            path.write_text(
+                json.dumps(self.config, indent=4),
+                encoding="utf-8",
+            )
+            return ConfigResult(
+                True, "Configuration generation successful", self.config
+            )
         except Exception as e:  # noqa: BLE001
-            return ConfigResult(False, str(e), self.config)
+            return ConfigResult(False, str(e), None)
 
-    def read_config_file(self, file_name) -> ConfigResult:
+    def read_config_file(self, file_name: str | Path) -> ConfigResult:
         try:
-            path = Path(Path.cwd(), "data", file_name)
-
-            with open(path, "rb") as fr:
-                file = fr.read()
-                return ConfigResult(
-                    True, "Configuration extraction successful", json.loads(file)
-                )
+            path = self._config_path(file_name)
+            return ConfigResult(
+                True,
+                "Configuration extraction successful",
+                json.loads(path.read_text(encoding="utf-8")),
+            )
         except Exception as e:  # noqa: BLE001
             return ConfigResult(False, str(e), None)

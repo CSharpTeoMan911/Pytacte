@@ -5,6 +5,7 @@ from pathlib import Path
 import firebase_admin
 from aiofile import async_open
 from firebase_admin import App, auth, credentials
+from firebase_admin.exceptions import FirebaseError
 
 from utils.GoogleSecretsManager import GoogleSecretsManager, ReturnValue
 
@@ -62,26 +63,33 @@ class FirebaseAuth:
         except ValueError as e:
             raise RuntimeError(f'--> [ Error: {e} ]')
         
-    def validate_id_token(self, token:str) -> tuple[bool, str]:
+    def validate_id_token(self, token:str) -> tuple[bool, str | dict]:
         try:
             result = auth.verify_id_token(id_token=token, check_revoked=True)
             
             
             if result['email_verified'] is False:
                 self.__remove_id_token__(result['user_id'])
-                return [False, 'Email not verified']
+                return (False, 'Email not verified')
 
-            return [True, result]
+            return (True, result)
         except auth.InvalidIdTokenError:
-            return [False, 'Invalid token']
+            return (False, 'Invalid token')
         except auth.ExpiredIdTokenError:
-            return [False, 'Expired token']
+            return (False, 'Expired token')
         except auth.RevokedIdTokenError:
-            return [False, 'Token revoked']
+            return (False, 'Token revoked')
         except auth.UserDisabledError:
-            return [False, 'User disabled']
+            return (False, 'User disabled')
         except auth.CertificateFetchError:
-            return [False, 'Certificate error']
+            return (False, 'Certificate error')
+        
+    def delete_account(self, uid) -> tuple[bool, str]:
+        try:
+            auth.delete_user(uid=uid, app=self.__firebase_app__)
+            return (True, "Account deletion successful")
+        except FirebaseError, ValueError:
+            return (False, "Internal server error")
         
     def get_app(self) -> App:
         return self.__firebase_app__

@@ -116,7 +116,7 @@ class CaddyManager:
                     "caddyfile",
                 ],
                 cwd=self.caddy_folder,
-                stdout=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="utf-8",

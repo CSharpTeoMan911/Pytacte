@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO, StringIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -6,14 +7,22 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import pytest
 import requests
 
-from server import caddy_manager
-from server.caddy_manager import CaddyManager
+from utils import caddy_manager
+from utils.caddy_manager import CaddyManager
+
+_test_threadpool = ThreadPoolExecutor(max_workers=1)
 
 
 def manager_for(caddy_folder: Path) -> CaddyManager:
-    manager = CaddyManager()
+    manager = CaddyManager(threadpool=_test_threadpool)
     manager.caddy_folder = caddy_folder
     return manager
+
+
+@pytest.fixture(scope="module", autouse=True)
+def shutdown_test_threadpool():
+    yield
+    _test_threadpool.shutdown(wait=True)
 
 
 class FakeProcess:
@@ -180,7 +189,7 @@ def test_set_config_rejects_missing_files_after_producer_succeeds(tmp_path, monk
 
 
 def test_start_server_runs_configured_executable_and_streams_output(
-    tmp_path, monkeypatch, capsys
+    tmp_path, monkeypatch
 ):
     manager = manager_for(tmp_path)
     config_path = tmp_path / CaddyManager.DEV_CONFIG_NAME
@@ -194,12 +203,20 @@ def test_start_server_runs_configured_executable_and_streams_output(
     executable_path.write_bytes(b"fake executable")
     process = FakeProcess(stdout_output="server ready\n", stderr_output="test log\n")
     calls = []
+    submitted = []
+    original_submit = manager.threadpool.submit
 
     def fake_popen(command, **kwargs):
         calls.append((command, kwargs))
         return process
 
+    def fake_submit(function, *args, **kwargs):
+        future = original_submit(function, *args, **kwargs)
+        submitted.append((function, args, kwargs, future))
+        return future
+
     monkeypatch.setattr(caddy_manager.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(manager.threadpool, "submit", fake_submit)
 
     result = manager.start_server()
 
@@ -227,11 +244,14 @@ def test_start_server_runs_configured_executable_and_streams_output(
             },
         )
     ]
-    for output_thread in manager._output_threads:
-        output_thread.join(timeout=1)
-    output = capsys.readouterr().out
-    assert "[Caddy stdout] server ready" in output
-    assert "[Caddy stderr] test log" in output
+    assert [submission[:3] for submission in submitted] == [
+        (manager.caddy_logger, (process.stderr, process.stdout), {})
+    ]
+    submitted[0][3].result(timeout=1)
+
+    log_contents = (tmp_path / "caddy_server_log.txt").read_text(encoding="utf-8")
+    assert "Error: test log" in log_contents
+    assert "Info: server ready" in log_contents
 
 
 def test_start_server_requires_selected_config(tmp_path):

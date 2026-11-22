@@ -61,7 +61,7 @@ def test_set_secret_creates_secret_and_adds_version():
     assert result.message == "Secret addition successful"
     assert result.successful is True
     assert result.payload is secret_version
-    set_secret.assert_awaited_once_with("app-secret", "secret-value", client)
+    set_secret.assert_awaited_once_with("app-secret", client)
     set_secret_version.assert_awaited_once_with(
         "app-secret", "secret-value", client
     )

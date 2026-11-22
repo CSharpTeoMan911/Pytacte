@@ -670,6 +670,48 @@ class FirebaseDatabase:
                 )
 
         return True, f"Deleted {deleted_count} expired transcription job(s)"
+    
+    
+    def delete_transcription_jobs_for_user(self, uid:str) -> tuple[bool, str]:
+        deleted_count = 0
+
+        while True:
+            try:
+                expired_items = (
+                    db.reference(
+                        "/TranscriptionJobs",
+                        app=self.firebase_app,
+                        url=self.database_url,
+                    )
+                    .order_by_child("uuid")
+                    .equal_to(uid)
+                    .limit_to_first(20)
+                    .get()
+                )
+
+                if not isinstance(expired_items, Mapping) or not expired_items:
+                    break
+
+                for transcription_id in expired_items:
+                    self.__reference__("TranscriptionJobs", transcription_id).delete()
+                    deleted_count += 1
+            except (
+                ValueError,
+                TypeError,
+                KeyError,
+                RuntimeError,
+                FirebaseError,
+            ) as error:
+                return (
+                    False,
+                    (
+                        f"Failed to delete transcription jobs after deleting "
+                        f"{deleted_count}: {error}"
+                    ),
+                )
+
+        return True, f"Deleted {deleted_count} transcription job(s)"
+    
 
     # -------------------------------
     # Private producer methods
