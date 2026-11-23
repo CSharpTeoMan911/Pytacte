@@ -8,14 +8,14 @@
 
 ## Pytacte: Cross-platform speech-to-text app
 
-Pytacte is a multi-user fully secure cross platform speech recognition platform. It is using **🔥Firebase** for authentication and real-time information management, **🤖 Sherpa-ONNX** for streaming multi-client STT AI model inference backend, and **🔐 Google Secrets** for admin key management and SSL certificate password management. 
+Pytacte is a multi-user fully secure cross platform speech recognition platform. It is using **🔥Firebase** for authentication and real-time information management, **🤖 Sherpa-ONNX** for streaming multi-client STT AI model inference backend, and **🔐 Google Secrets** for Firebase Admin SDK credential management.
 
 The project is hosted [here](https://pytacte.web.app) where is up, operational, and ready to use.
 
 ## Technologies
 
 The frontend is written with **React ⚛️**, **🎨 MUI (Material UI)**, and **TanStack Router 🧭** for dynamic rendering, stateful components, and dynamic routing. The backend is written in **🐍 Python**
-and is using the **🔥Firebase Admin SDK** for managing authentication sessions and load balancing states, and **🔐 Google Secrets** for password and key management.
+and is using the **🔥Firebase Admin SDK** for managing authentication sessions and load balancing states, and **🔐 Google Secrets** for Firebase Admin SDK credentials.
 
 ## Backend architecture 🏗️
 
@@ -114,7 +114,7 @@ ______________________
   <img width="650" src="repo-data/Connection_Initiation_Workflow.drawio.png" alt="Pytacte logo">
 </p>
 
-The conection is initiated by the clients by quering a table from the database which is the only table available for read operations for the clients which contains the available servers and their IP adresses. The client will take the first IP address within that table and start the transcription session over it. 
+The client reads the available-server table from Firebase and selects a server address. Each address is a bare host and port; the client connects to it over secure WebSockets (wss://) through Caddy.
 
 <br/>
 <br/>
@@ -176,7 +176,6 @@ _______________________________________________
       ".indexOn": [
         "server_id",
         "server_address",
-        "tls",
         "cpu_usage"
       ],
       "$serverAddress": {
@@ -191,11 +190,6 @@ _______________________________________________
           ".write": false,
           ".validate": "newData.isString()"
         },
-        "tls": {
-          ".read": "auth != null",
-          ".write": false,
-          ".validate": "newData.isBoolean()"
-        },
         "cpu_usage": {
           ".read": false,
           ".write": false,
@@ -207,7 +201,6 @@ _______________________________________________
       ".indexOn": [
         "server_id",
         "server_address",
-        "tls",
         "cpu_usage",
         "ram_usage",
         "load_balancer",
@@ -223,11 +216,6 @@ _______________________________________________
           ".read": false,
           ".write": false,
           ".validate": "newData.isString()"
-        },
-        "tls": {
-          ".read": false,
-          ".write": false,
-          ".validate": "newData.isBoolean()"
         },
         "cpu_usage": {
           ".read": false,
@@ -284,31 +272,23 @@ All the functions to be executed regarding transcription and client-to-server co
 
 
 
-### Google Secrets certificate password and admin key management
-__________________________________________________________________
-
-Either if a server will use a certificate with password to encrypt the connection, or either if a server is setting up a private key that is used by the **🔥Firebase Admin SDK**, **🔐 Google Secrets** will be used to store and retrieve this information when needed. This is done to prevent attack surface area, by preventing attackers gaining privileges even if they gain access to the server.
-
-### Websocket encryption and JWT Token validation
+### Google Secrets and Firebase Admin credentials
 __________________________________________________
 
-On each websocket connection that is initiated, the client and server will exchange messages using a custom made **DSL (Domanin Specific Language)**. Within this information exchange the client will send the desired **STT model type** and the desired **model precision metadata** alongside its **JWT token**. If the **JWT token** is valid, the transcription session is initiated, if not, the transcription session is terminated.
+The backend uses Google Secrets to retrieve the Firebase Admin SDK service-account credentials identified by **firebase.firebase_key_name**. Caddy manages the TLS certificates used for client connections.
 
-<p align="left">
-  <img width="720" src="repo-data/Unencrypted intecepted message.png" alt="Pytacte logo">
-</p>
+### WebSocket security and JWT validation
+_________________________________________
 
-<p align="left">
-  <img width="720" src="repo-data/Encrypted intercepted payload.png" alt="Pytacte logo">
-</p>
+The app always starts Caddy as its reverse proxy. Clients connect to the Caddy address using secure WebSockets (**wss://**). Caddy terminates TLS and forwards WebSocket traffic to the Python backend over the configured local port. The Python app does not load or generate TLS certificates.
 
-<br/>
+Each connection uses the application message protocol to send the selected STT model, model precision, and Firebase JWT. The server validates the JWT before starting transcription.
 
-The connection encryption was tested with **🦈 Wireshark**. View the [unencrypted packet capture](Pytacte-py/data/WireShark_Tests/unencrypted/Unecrypted%20packet%20sniffing.pcapng) and the [encrypted packet capture](Pytacte-py/data/WireShark_Tests/encrypted/Ecrypted%20packet%20sniffing.pcapng).
+### IP rate limiter
+___________________
 
+The **general.max_requests_per_minute** setting limits new WebSocket connections per client IP in a rolling 60-second window. It defaults to **100**. Add it under **general** in Pytacte-py/data/server_config.json; existing configuration files do not receive new defaults automatically.
 
-### IP Rate-Limiter
-_______________________
+Caddy forwards the originating client IP in **X-Forwarded-For**, and the backend uses the first address in that header. If the header is missing, the backend falls back to the WebSocket peer address.
 
-The server app has a configurable built in IP rate limiter.
-
+The limit is enforced independently by each backend process. Counters are kept in memory and reset when that process restarts, so the limit is not shared across a cluster. Connections over the limit are closed with WebSocket status code **1013**; messages sent over an already-open connection do not count toward the limit.
