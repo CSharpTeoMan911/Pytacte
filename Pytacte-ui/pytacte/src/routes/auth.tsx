@@ -8,6 +8,7 @@ import Typography from '@mui/material/Typography';
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
 import CustomAppBar from '#/components/CustomAppBar';
+import DeviceSelector from '#/components/DeviceSelector';
 import RootPanel from '#/components/RootPanel';
 import LogoComponent from '#/components/LogoComponent';
 import NotificationSystem from '#/components/NotificationSystem';
@@ -115,6 +116,108 @@ function Login() {
     }, []);
 
 
+    const authPanel = (
+        <section className="auth-card" aria-labelledby="login-title">
+            <LogoComponent width="84px" height="84px" dynamicSizing={false} />
+
+            <Typography id="login-title" component="h1" className="auth-heading">
+                {isRegistering ? 'Create an account' : 'Sign in to Pytacte'}
+            </Typography>
+            <Typography className="auth-description">
+                {isRegistering ? 'Register to get started with Pytacte.' : 'Sign in to continue to Pytacte.'}
+            </Typography>
+
+            <div className="auth-form">
+                <TextField
+                    className="auth-field"
+                    label="Email address"
+                    type="email"
+                    required
+                    fullWidth
+                    onChange={(e) => setEmail(e.target.value)}
+                />
+                <TextField
+                    className="auth-field"
+                    label="Password"
+                    type={passwordVisible ? 'text' : 'password'}
+                    required
+                    fullWidth
+                    slotProps={{
+                        input: {
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <IconButton
+                                        aria-label={passwordVisible ? 'Hide password' : 'Show password'}
+                                        aria-pressed={passwordVisible}
+                                        onClick={() => setPasswordVisible(!passwordVisible)}
+                                        edge="end"
+                                    >
+                                        {passwordVisible ? <VisibilityOff /> : <Visibility />}
+                                    </IconButton>
+                                </InputAdornment>
+                            ),
+                        },
+                    }}
+                    onChange={(e) => setPassword(e.target.value)}
+                />
+                {isRegistering && (
+                    <TextField
+                        className="auth-field"
+                        label="Repeat Password"
+                        type={passwordVisible ? 'text' : 'password'}
+                        required
+                        fullWidth
+                        slotProps={{
+                            input: {
+                                endAdornment: (
+                                    <InputAdornment position="end">
+                                        <IconButton
+                                            aria-label={passwordVisible ? 'Hide password' : 'Show password'}
+                                            aria-pressed={passwordVisible}
+                                            onClick={() => setPasswordVisible(!passwordVisible)}
+                                            edge="end"
+                                        >
+                                            {passwordVisible ? <VisibilityOff /> : <Visibility />}
+                                        </IconButton>
+                                    </InputAdornment>
+                                ),
+                            },
+                        }}
+                        onChange={(e) => setRepeatPassword(e.target.value)}
+                    />
+                )}
+                <Button className="auth-submit" type="button" variant="contained" fullWidth onClick={() => handleAuthentication(false, email, password, repeatPassword, isRegistering, setNotificationText, setNotificationType, setNotificationOpen, setIsRegistering)}>
+                    {isRegistering ? 'Register' : 'Sign in'}
+                </Button>
+                {!isRegistering && (
+                    <Button className="auth-google-submit" type="button" variant="contained" fullWidth onClick={() => handleAuthentication(true, email, password, repeatPassword, isRegistering, setNotificationText, setNotificationType, setNotificationOpen)}>
+                        <span className="auth-google-content">
+                            <img className="auth-google-logo" src={googleLogo} alt="" />
+                            <span>Sign in with Google</span>
+                        </span>
+                    </Button>
+                )}
+            </div>
+
+            {isRegistering && (
+                <Typography className="auth-register-prompt">
+                    Already have an account?{' '}
+                    <a className="auth-register-link" type="button" onClick={() => setIsRegistering(false)}>
+                        Sign in
+                    </a>
+                </Typography>
+            )}
+            {!isRegistering && (
+                <Typography className="auth-register-prompt">
+                    New to Pytacte?{' '}
+                    <a className="auth-register-link" type="button" onClick={() => setIsRegistering(true)}>
+                        Register
+                    </a>
+                </Typography>
+            )}
+        </section>
+    );
+
 
     return (
         <RootPanel style={{ background: linearGradient }}>
@@ -139,110 +242,22 @@ function Login() {
                     ['/auth', '[auth]'],
                 ]}
             />
-            <main className="auth-layout">
-                <section className="auth-card" aria-labelledby="login-title">
-                    <LogoComponent width="84px" height="84px" dynamicSizing={false} />
-
-                    <Typography id="login-title" component="h1" className="auth-heading">
-                        {isRegistering ? 'Create an account' : 'Sign in to Pytacte'}
-                    </Typography>
-                    <Typography className="auth-description">
-                        {isRegistering ? 'Register to get started with Pytacte.' : 'Sign in to continue to Pytacte.'}
-                    </Typography>
-
-                    <div className="auth-form">
-                        <TextField
-                            className="auth-field"
-                            label="Email address"
-                            type="email"
-                            autoComplete="username"
-                            required
-                            fullWidth
-                            onChange={(e) => setEmail(e.target.value)}
-                        />
-                        <TextField
-                            className="auth-field"
-                            label="Password"
-                            type={passwordVisible ? 'text' : 'password'}
-                            autoComplete="current-password"
-                            required
-                            fullWidth
-                            slotProps={{
-                                input: {
-                                    endAdornment: (
-                                        <InputAdornment position="end">
-                                            <IconButton
-                                                aria-label={passwordVisible ? 'Hide password' : 'Show password'}
-                                                aria-pressed={passwordVisible}
-                                                onClick={() => setPasswordVisible(!passwordVisible)}
-                                                edge="end"
-                                            >
-                                                {passwordVisible ? <VisibilityOff /> : <Visibility />}
-                                            </IconButton>
-                                        </InputAdornment>
-                                    ),
-                                },
-                            }}
-                            onChange={(e) => setPassword(e.target.value)}
-                        />
-                        {isRegistering && (
-                            <TextField
-                                className="auth-field"
-                                label="Repeat Password"
-                                type={passwordVisible ? 'text' : 'password'}
-                                autoComplete="current-password"
-                                required
-                                fullWidth
-                                slotProps={{
-                                    input: {
-                                        endAdornment: (
-                                            <InputAdornment position="end">
-                                                <IconButton
-                                                    aria-label={passwordVisible ? 'Hide password' : 'Show password'}
-                                                    aria-pressed={passwordVisible}
-                                                    onClick={() => setPasswordVisible(!passwordVisible)}
-                                                    edge="end"
-                                                >
-                                                    {passwordVisible ? <VisibilityOff /> : <Visibility />}
-                                                </IconButton>
-                                            </InputAdornment>
-                                        ),
-                                    },
-                                }}
-                                onChange={(e) => setRepeatPassword(e.target.value)}
-                            />
-                        )}
-                        <Button className="auth-submit" type="button" variant="contained" fullWidth onClick={() => handleAuthentication(false, email, password, repeatPassword, isRegistering, setNotificationText, setNotificationType, setNotificationOpen, setIsRegistering)}>
-                            {isRegistering ? 'Register' : 'Sign in'}
-                        </Button>
-                        {!isRegistering && (
-                            <Button className="auth-google-submit" type="button" variant="contained" fullWidth onClick={() => handleAuthentication(true, email, password, repeatPassword, isRegistering, setNotificationText, setNotificationType, setNotificationOpen)}>
-                                <span className="auth-google-content">
-                                    <img className="auth-google-logo" src={googleLogo} alt="" />
-                                    <span>Sign in with Google</span>
-                                </span>
-                            </Button>
-                        )}
-                    </div>
-
-                    {isRegistering && (
-                        <Typography className="auth-register-prompt">
-                            Already have an account?{' '}
-                            <a className="auth-register-link" type="button" onClick={() => setIsRegistering(false)}>
-                                Sign in
-                            </a>
-                        </Typography>
-                    )}
-                    {!isRegistering && (
-                        <Typography className="auth-register-prompt">
-                            New to Pytacte?{' '}
-                            <a className="auth-register-link" type="button" onClick={() => setIsRegistering(true)}>
-                                Register
-                            </a>
-                        </Typography>
-                    )}
-                </section>
-            </main>
+            <DeviceSelector
+                desktopClassName="auth-device-view"
+                mobileClassName="auth-device-view"
+                desktopChildren={<main className="auth-layout">{authPanel}</main>}
+                mobileChildren={
+                    <>
+                        <style>{`
+                            .root_div {
+                                height: 100dvh;
+                                min-height: 100dvh;
+                            }
+                        `}</style>
+                        <main className="auth-layout auth-layout--mobile">{authPanel}</main>
+                    </>
+                }
+            />
         </RootPanel>
     );
 }

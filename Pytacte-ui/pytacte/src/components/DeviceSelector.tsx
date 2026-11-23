@@ -4,6 +4,8 @@ import type { ReactNode } from 'react';
 type Props = {
     desktopChildren: ReactNode;
     mobileChildren:ReactNode;
+    desktopClassName?: string;
+    mobileClassName?: string;
 }
 
 const deviceSignals = {
@@ -18,21 +20,21 @@ const deviceSignals = {
     noAnyHover: matchMedia('(any-hover: none)').matches,
 };
 
-export default function DeviceSelector({ desktopChildren, mobileChildren }: Props) {
+export default function DeviceSelector({ desktopChildren, mobileChildren, desktopClassName, mobileClassName }: Props) {
 
     const isProbablyMobile = deviceSignals.anyCoarsePointer || deviceSignals.coarsePointer || deviceSignals.noHover || deviceSignals.noAnyHover;
 
 
     if (isMobile && isProbablyMobile) {
         return (
-            <MobileView>
+            <MobileView className={mobileClassName}>
                 {mobileChildren}
             </MobileView>
         );
     }
     else {
         return (
-            <BrowserView>
+            <BrowserView className={desktopClassName}>
                 {desktopChildren}
             </BrowserView>
         );
