@@ -101,7 +101,6 @@ def test_server_and_transcription_job_create_and_heartbeat_round_trip(database):
     server_data = ServerAvailabilityDTO(
         server_id=server_id,
         server_address="127.0.0.1:1",
-        tls=False,
         cpu_usage=0.0,
         load_balancer=False,
     )
@@ -120,7 +119,6 @@ def test_server_and_transcription_job_create_and_heartbeat_round_trip(database):
         assert stored_client_server is not None
         assert stored_client_server["server_id"] == server_id
         assert stored_client_server["server_address"] == server_data.server_address
-        assert stored_client_server["tls"] is server_data.tls
         assert stored_client_server["cpu_usage"] == server_data.cpu_usage
 
         # Set an older value first so the heartbeat API visibly changes the record.
@@ -133,7 +131,6 @@ def test_server_and_transcription_job_create_and_heartbeat_round_trip(database):
         heartbeat_data = ServerAvailabilityDTO(
             server_id=server_id,
             server_address=server_data.server_address,
-            tls=server_data.tls,
             cpu_usage=31.5,
             load_balancer=server_data.load_balancer,
         )
@@ -214,7 +211,6 @@ def test_heartbeat_restores_deleted_client_servers_before_orphan_pruning(
                     server_id=server_id,
                     server_address=f"127.0.0.1:{22000 + index}",
                     load_balancer=False,
-                    tls=False,
                     cpu_usage=float(index),
                 )
             )
@@ -236,7 +232,6 @@ def test_heartbeat_restores_deleted_client_servers_before_orphan_pruning(
                     server_id=server_id,
                     server_address=f"127.0.0.1:{22000 + index}",
                     load_balancer=False,
-                    tls=False,
                     cpu_usage=0.0,
                 ),
             )
@@ -315,7 +310,6 @@ def test_heartbeat_restores_deleted_client_servers_before_cpu_sorting(
                     server_id=server_id,
                     server_address=f"127.0.0.1:{22100 + index}",
                     load_balancer=False,
-                    tls=False,
                     cpu_usage=cpu_usage,
                 )
             )
@@ -337,7 +331,6 @@ def test_heartbeat_restores_deleted_client_servers_before_cpu_sorting(
                     server_id=server_id,
                     server_address=f"127.0.0.1:{22100 + index}",
                     load_balancer=False,
-                    tls=False,
                     cpu_usage=0.0,
                 ),
             )
@@ -401,7 +394,6 @@ def test_orphan_prune_then_sort_then_heartbeat_update(database, monkeypatch):
                     server_id=server_id,
                     server_address=f"127.0.0.1:{22200 + index}",
                     load_balancer=False,
-                    tls=False,
                     cpu_usage=cpu_usage,
                 )
             )
@@ -411,7 +403,6 @@ def test_orphan_prune_then_sort_then_heartbeat_update(database, monkeypatch):
             {
                 "server_id": orphan_id,
                 "server_address": "127.0.0.1:22299",
-                "tls": False,
                 "cpu_usage": 1.0,
             }
         )
@@ -441,7 +432,6 @@ def test_orphan_prune_then_sort_then_heartbeat_update(database, monkeypatch):
                 server_id=server_ids[3],
                 server_address="127.0.0.1:22203",
                 load_balancer=False,
-                tls=False,
                 cpu_usage=0.0,
             ),
         )
@@ -505,7 +495,6 @@ def test_sort_servers_by_least_cpu_usage_keeps_lowest_50(database):
             "server_id": server_id,
             "server_address": f"127.0.0.1:{20000 + index}",
             "load_balancer": False,
-            "tls": False,
             "cpu_usage": cpu_values[index],
             "last_heartbeat": int(datetime.now(UTC).strftime("%Y%m%d%H%M")),
         }
@@ -592,7 +581,6 @@ def test_load_balancer_rebalances_after_server_load_increases(database):
         "server_id": initial_server_id,
         "server_address": "127.0.0.1:21000",
         "load_balancer": False,
-        "tls": False,
         "cpu_usage": 1.0,
         "last_heartbeat": heartbeat,
     }
@@ -602,7 +590,6 @@ def test_load_balancer_rebalances_after_server_load_increases(database):
             "server_id": server_id,
             "server_address": f"127.0.0.1:{21001 + index}",
             "load_balancer": False,
-            "tls": False,
             "cpu_usage": cpu_usage,
             "last_heartbeat": heartbeat,
         }
@@ -653,7 +640,6 @@ def test_delete_expired_servers_removes_expired_and_preserves_fresh(database):
             "server_id": server_id,
             "server_address": f"127.0.0.1:{10000 + index}",
             "load_balancer": False,
-            "tls": False,
             "cpu_usage": 0.0,
             # Reuse timestamps so duplicate heartbeat values are covered.
             "last_heartbeat": int(
@@ -669,7 +655,6 @@ def test_delete_expired_servers_removes_expired_and_preserves_fresh(database):
             "server_id": server_id,
             "server_address": f"127.0.0.1:{11000 + index}",
             "load_balancer": False,
-            "tls": False,
             "cpu_usage": 0.0,
             "last_heartbeat": int(now.strftime("%Y%m%d%H%M")),
         }
@@ -822,7 +807,6 @@ def test_delete_expired_items_removes_server_from_client_collection(database):
         "server_id": server_id,
         "server_address": "127.0.0.1:1",
         "load_balancer": False,
-        "tls": False,
         "cpu_usage": 0.0,
         "last_heartbeat": int(
             (datetime.now(UTC) - timedelta(minutes=10)).strftime("%Y%m%d%H%M")
@@ -831,7 +815,6 @@ def test_delete_expired_items_removes_server_from_client_collection(database):
     client_record = {
         "server_id": server_id,
         "server_address": server_record["server_address"],
-        "tls": server_record["tls"],
         "cpu_usage": server_record["cpu_usage"],
     }
 
@@ -1022,7 +1005,6 @@ def test_delete_orphan_transcription_jobs_removes_only_jobs_with_unavailable_ser
         server_ids[index]: {
             "server_id": server_ids[index],
             "server_address": f"127.0.0.1:{22000 + index}",
-            "tls": False,
             "cpu_usage": 0.0,
         }
         for index in range(1, len(server_ids), 2)

@@ -14,16 +14,10 @@ class Config:
         self,
         ip_address: str = "127.0.0.1",
         port_number: int = 80,
-        address: str = '127.0.0.1:80',
-        encrypt_stream: bool = True,
-        tls:bool = True,
-        encrypt_cert: bool = False,
-        generate_self_signed: bool = False,
-        server_cert: str = "server_cert.pem",
-        private_key: str = "private_key.pem",
+        address: str = '127.0.0.1:8443',
         max_transcription_jobs_per_user: int = 10,
-        reverse_proxy:bool = False,
         is_load_balancer_node:bool = True,
+        max_requests_per_minute:int = 100,
         database_url:str = "REPLACE_WITH_FIREBASE_YOUR_DATABASE_URL",
         server_id:str = "server_1",
         is_dev:bool = True
@@ -35,16 +29,8 @@ class Config:
                 "address":address,
                 "is_load_balancer_node": is_load_balancer_node,
                 "database_url":database_url,
-                "server_id":server_id
-            },
-            "security": {
-                "encrypt_stream": encrypt_stream,
-                "tls": tls,
-                "encrypt_cert": encrypt_cert,
-                "generate_self_signed": generate_self_signed,
-                "server_cert": server_cert,
-                "private_key": private_key,
-                "reverse_proxy": reverse_proxy
+                "server_id":server_id,
+                "max_requests_per_minute":max_requests_per_minute
             },
             "transcription": {
                 "max_transcription_jobs_per_user": max_transcription_jobs_per_user,

@@ -6,7 +6,7 @@ const database = getDatabase(app);
 
 type ReturnValue = {
     isSucessful: boolean,
-    payload: [string, string] | string
+    payload: string
 }
 
 export async function getAvailableServer(): Promise<ReturnValue> {
@@ -31,9 +31,8 @@ export async function getAvailableServer(): Promise<ReturnValue> {
             if (serverData && typeof serverData === "object") {
                 const serverRecord = serverData as Record<string, unknown>;
                 const address: string | null = serverRecord["server_address"] as string;
-                const protocol: string | null = serverRecord["tls"] ? 'wss' : 'ws';
 
-                return address && protocol ? { isSucessful: true, payload: [address, protocol] } : { isSucessful: false, payload: 'No server is available' } as ReturnValue;
+                return address ? { isSucessful: true, payload: address } : { isSucessful: false, payload: 'No server is available' } as ReturnValue;
             }
 
             return { isSucessful: false, payload: 'No server is available' } as ReturnValue;

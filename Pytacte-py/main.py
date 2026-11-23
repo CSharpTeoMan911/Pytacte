@@ -17,7 +17,6 @@ from server.load_balancer import LoadBalancer
 from server.transcription_service import SpeechToTextInterface
 from utils.caddy_manager import CaddyManager
 from utils.ConfigManager import Config
-from utils.Crytography import RSA_Crypto
 from utils.IpRateLimiter import RateLimiter
 
 AUTH_CHECKUP_TIME: float = 5  # 5 seconds timeout
@@ -34,10 +33,10 @@ thread_pool = ThreadPoolExecutor(max_workers=2)
 
 caddy = CaddyManager(thread_pool)
 
-config = Config(encrypt_stream=True)
+config = Config()
 
 auth = FirebaseAuth()
-ip_rate_limiter = RateLimiter()
+ip_rate_limiter:RateLimiter | None
 
 loaded_config: object = {}
 load_balancer: LoadBalancer | None = None
@@ -107,13 +106,11 @@ def load_balancing(flag: threading.Event):
             server_id: str = loaded_config["general"]["server_id"]
             server_address = loaded_config["general"]["address"]
             is_load_balancer_node = loaded_config["general"]["is_load_balancer_node"]
-            tls = loaded_config["security"]["tls"]
 
             data = ServerAvailabilityDTO(
                 server_id=server_id,
                 server_address=server_address,
                 load_balancer=is_load_balancer_node,
-                tls=tls,
                 cpu_usage=0,
             )
 
@@ -123,54 +120,6 @@ def load_balancing(flag: threading.Event):
                 start_time = monotonic()
 
             load_balancer.update_cpu_and_ram_metrics(server_id=server_id, data=data)
-
-
-async def cert_management():
-    try:
-        if loaded_config["security"]["encrypt_stream"]:
-            crypto = RSA_Crypto()
-            server_cert_path = Path(
-                Path.cwd(), "data", loaded_config["security"]["server_cert"]
-            )
-            private_key = Path(
-                Path.cwd(), "data", loaded_config["security"]["private_key"]
-            )
-
-            if server_cert_path.exists():
-                print("--> [ The server certificate exist. ]")
-
-            elif loaded_config["security"]["generate_self_signed"]:
-                private_key = crypto.generate_rsa_key()
-
-                (
-                    public_key_bytes,
-                    private_key_bytes,
-                ) = await crypto.serialise_rsa_key_pair(
-                    key=private_key,
-                    passwordless=not loaded_config["security"]["encrypt_cert"],
-                )
-
-                cert_gen_path: str = await crypto.write_keys_to_cert(
-                    loaded_config["security"]["server_cert"],
-                    public_key_bytes,
-                    private_key_bytes,
-                    not loaded_config["security"]["encrypt_cert"],
-                )
-                private_key_gen_path: str = crypto.write_rsa_key_to_file(
-                    loaded_config["security"]["private_key"], private_key_bytes
-                )
-
-                print("\n\n--> [[!!!] Generating certificate and private key [!!!]]")
-                print(f"--> [Server certificate path: {cert_gen_path}]")
-                print(f"--> [Server private key path: {private_key_gen_path}]")
-                print("\n\n")
-            else:
-                raise RuntimeError(
-                    "--> [ Error: The public key, private key, or certificate are not available. ]"
-                )
-    except Exception as e:
-        print(f"--> [ Error: {e}]")
-        raise
 
 
 async def transciption_session_heartbeat_manager(
@@ -213,16 +162,13 @@ async def echo(websocket: ServerConnection):
 
     last_heartbeat = monotonic()
 
-    if not loaded_config["security"]["reverse_proxy"]:
-        client_ip = websocket.remote_address[0]
-    else:
-        forwarded_for = websocket.request.headers.get("X-Forwarded-For")
-        client_ip = (
-            forwarded_for.split(",")[0].strip()
-            if forwarded_for
-            else websocket.remote_address[0]
-        )
-
+    forwarded_for = websocket.request.headers.get("X-Forwarded-For")
+    client_ip = (
+        forwarded_for.split(",")[0].strip()
+        if forwarded_for
+        else websocket.remote_address[0]
+    )
+    
     if client_ip == None or client_ip == "":
         raise RuntimeError("Invalid client ip address")
 
@@ -473,13 +419,15 @@ async def main():
         global loaded_config
         global start_time
         global database
+        global ip_rate_limiter
 
         print("--> [ Loading server configuration ]")
 
         loaded_config = initiate_config()
-
-        print("--> [ Loading server certificates ]")
-        await cert_management()
+        
+        print("--> [ Loading ip rate-limiter ]")
+        
+        ip_rate_limiter = RateLimiter(requests_per_minute=loaded_config["general"]["max_requests_per_minute"])
 
         print("--> [ Initiating the Firebase Admin SDK app ]")
 
@@ -497,13 +445,11 @@ async def main():
         server_id = loaded_config["general"]["server_id"]
         server_address = loaded_config["general"]["address"]
         is_load_balancer_node = loaded_config["general"]["is_load_balancer_node"]
-        tls = loaded_config["security"]["tls"]
 
         data = ServerAvailabilityDTO(
             server_id=server_id,
             server_address=server_address,
             load_balancer=is_load_balancer_node,
-            tls=tls,
             cpu_usage=0,
         )
         load_balancer = LoadBalancer(
@@ -532,24 +478,23 @@ async def main():
 
         print("--> [ Database initialised ]")
 
-        if loaded_config["security"]["reverse_proxy"]:
-            is_dev: bool = loaded_config["caddy_reverse_proxy"]["is_dev"]
+        is_dev: bool = loaded_config["caddy_reverse_proxy"]["is_dev"]
 
-            print("--> [ Loading caddy reverse proxy ]")
-            is_sucessful, message = caddy.download_for_current_platform()
+        print("--> [ Loading caddy reverse proxy ]")
+        is_sucessful, message = caddy.download_for_current_platform()
 
-            if is_sucessful:
-                is_sucessful, message = caddy.set_config(is_dev)
+        if is_sucessful:
+            is_sucessful, message = caddy.set_config(is_dev)
 
-                if not is_sucessful:
-                    raise ValueError(f"Caddy configuration error: {message}")
+            if not is_sucessful:
+                raise ValueError(f"Caddy configuration error: {message}")
 
-                is_sucessful, message = caddy.start_server()
-                if not is_sucessful:
-                    raise ValueError(f"Caddy startup error: {message}")
+            is_sucessful, message = caddy.start_server()
+            if not is_sucessful:
+                raise ValueError(f"Caddy startup error: {message}")
 
-            else:
-                raise ValueError(f"Caddy download error: {message}")
+        else:
+            raise ValueError(f"Caddy download error: {message}")
 
         start_time = monotonic()
         thread_pool.submit(load_balancing, flag=flag)
@@ -557,55 +502,20 @@ async def main():
         IP = loaded_config["general"]["ip_address"]
         PORT = loaded_config["general"]["port_number"]
 
-        if (
-            loaded_config["security"]["encrypt_stream"]
-            and not loaded_config["security"]["reverse_proxy"]
-        ):
-            crypto = RSA_Crypto()
-            private_cert_path = Path(
-                Path.cwd(), "data", loaded_config["security"]["server_cert"]
-            )
-            private_key_path = Path(
-                Path.cwd(), "data", loaded_config["security"]["private_key"]
-            )
-            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        print("\n\n--> [ Server initiated ]")
+        print(f"--> [ Server listening on IP: {IP}, PORT: {PORT} ]")
 
-            try:
-                ssl_context.load_cert_chain(
-                    certfile=private_cert_path, keyfile=private_key_path
-                )
-            except Exception as e:  # noqa: BLE001
-                print(
-                    f"--> [ Error: {e}]",
-                    "--> [ Extracting the private key password . . . ]",
-                )
-                ssl_context.load_cert_chain(
-                    certfile=private_cert_path,
-                    keyfile=private_key_path,
-                    password=await crypto.get_private_key_password(),
-                )
-
-            print("\n\n--> [ Server initiated - (encrypted) ]")
-            print(f"--> [ Server listening on IP: {IP}, PORT: {PORT} ]")
-
-            server = await serve(echo, IP, PORT, ssl=ssl_context)
-            await server.serve_forever()
-        else:
-            print("\n\n--> [ Server initiated - (unencrypted) ]")
-            print(f"--> [ Server listening on IP: {IP}, PORT: {PORT} ]")
-
-            server = await serve(echo, IP, PORT)
-            await server.serve_forever()
+        server = await serve(echo, IP, PORT)
+        await server.serve_forever()
 
     except Exception as e:
         print(f"--> [Error: {e}]")
         raise
 
     finally:
-        if loaded_config["security"]["reverse_proxy"] and caddy.server_pid is not None:
-            is_sucessful, message = caddy.shutdown_server()
-            if not is_sucessful:
-                print(f"--> [ Caddy shutdown error: {message} ]")
+        is_sucessful, message = caddy.shutdown_server()
+        if not is_sucessful:
+            print(f"--> [ Caddy shutdown error: {message} ]")
         print("--> [ Server shutdown ]")
 
 

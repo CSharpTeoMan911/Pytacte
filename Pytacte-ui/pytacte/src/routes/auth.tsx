@@ -42,14 +42,16 @@ async function handleAuthentication(isGoogleLogIn: boolean, email: string, passw
         if (isGoogleLogIn) {
             const [status, message] = await loginWithGoogle();
 
-            if (status) {
-                setNotificationText(message);
-                setNotificationType('success');
-            } else {
-                setNotificationText(message);
-                setNotificationType('error');
+            if (!message.includes('auth/cancelled-popup-request')) {
+                if (status) {
+                    setNotificationText(message);
+                    setNotificationType('success');
+                } else {
+                    setNotificationText(message);
+                    setNotificationType('error');
+                }
+                setNotificationOpen(true);
             }
-            setNotificationOpen(true);
         }
         else {
             const [status, message] = await loginAccount(email, password);

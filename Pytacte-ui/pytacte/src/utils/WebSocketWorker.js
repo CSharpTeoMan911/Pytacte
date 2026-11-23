@@ -9,42 +9,19 @@ function postStatus(message) {
   self.postMessage([true, message]);
 }
 
-function connect(protocolValue, address) {
-  let protocol;
-  
-  const host = String(address).split(':')[0].trim();
-  const port = Number(String(address).split(':')[1]);
-
-  if (protocolValue == null || protocolValue === '') {
-    // Keep the current two-item init message working as a fallback.
-    protocol = 'ws';
-  } else {
-    const requestedProtocol = String(protocolValue).trim().toLowerCase();
-    if (requestedProtocol === 'ws') {
-      protocol = 'ws';
-    } else if (requestedProtocol === 'wss') {
-      protocol = 'wss';
-    } else {
-      postStatus(`[ WebSocket error: unsupported protocol "${protocolValue}"; expected "ws" or "wss" ]`);
-      return;
-    }
-  }
-
-  if (!host) {
-    postStatus('[ WebSocket error: host is empty ]');
-    return;
-  }
-
-
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    postStatus(`[ WebSocket error: invalid port "${String(address).split(':')[1]}" ]`);
-    return;
-  }
+function connect(address) {
+  address = String(address).toLocaleLowerCase();
 
   try {
-    const url = new URL(`${protocol}://${String(address).trim()}`);
-    url.port = String(port);
+    if (String(address).includes('http://')) {
+      postStatus("[ WebSocket error: Incorrect address ]");
+      return;
+    }
+    else if (String(address).includes('https://')) {
+      address = String(address).replace('https://', '')
+    }
 
+    const url = new URL(`wss://${String(address).trim()}`);
     const connection = new WebSocket(url);
     socket = connection;
 
@@ -128,11 +105,11 @@ self.onmessage = (event) => {
     return;
   }
 
-  // Init format: [address, protocol]. The protocol accepts "ws"/"ws:" or "wss"/"wss:".
+  // Init format: address.
   // Once initialized, all later client messages are forwarded to the socket.
-  if (!socket && Array.isArray(data) && data.length === 2) {
+  if (!socket && data) {
     console.log(data)
-    connect(data[1], data[0]);
+    connect(data);
     return;
   }
 

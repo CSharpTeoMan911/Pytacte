@@ -147,34 +147,30 @@ pip install -r requirements.txt
 
 ## Initialise the app
 
-On first launch, if no configuration file exists, the app creates one and stops
-so you can fill in the required settings.
+On first launch, if `data/server_config.json` does not exist, the app creates it
+with the defaults below. Set the Firebase values before relying on the server.
+Caddy starts automatically whenever the app starts; there is no setting to turn
+the reverse proxy or TLS off.
 
 ```json
 {
     "general": {
         "ip_address": "127.0.0.1",
         "port_number": 80,
-        "address": "127.0.0.1:80",
+        "address": "127.0.0.1:8443",
         "is_load_balancer_node": true,
-        "audio_stream_byte_rate_per_second": 80000,
         "database_url": "REPLACE_WITH_FIREBASE_YOUR_DATABASE_URL",
-        "server_id": "server_1"
-    },
-    "security": {
-        "encrypt_stream": true,
-        "tls": true,
-        "encrypt_cert": false,
-        "generate_self_signed": false,
-        "server_cert": "server_cert.pem",
-        "private_key": "private_key.pem",
-        "reverse_proxy": false
+        "server_id": "server_1",
+        "max_requests_per_minute": 100
     },
     "transcription": {
         "max_transcription_jobs_per_user": 10
     },
     "firebase": {
         "firebase_key_name": "KEY_NAME"
+    },
+    "caddy_reverse_proxy": {
+        "is_dev": true
     }
 }
 ```
@@ -188,6 +184,9 @@ so you can fill in the required settings.
 2. In Firebase, open **Settings > Service Accounts** and generate a new private
    key. Save the downloaded key in `Pytacte-py/data`, then set `firebase_key_name`
    in the configuration to the key's filename.
+3. If you already have a `data/server_config.json`, add
+   `max_requests_per_minute` under `general`; existing configuration files are
+   not automatically updated with new defaults.
 
 After updating these values, restart the server.
 
@@ -199,36 +198,36 @@ the shared Firebase Realtime Database. The `is_load_balancer_node` setting
 selects which instance also cleans up expired records and orders available
 servers for clients.
 
-The tables and JSON fragments below show the settings that change for each
-deployment. The fragments are partial: merge them into the matching sections of
-the full configuration file created on first launch. The number of server
-instances and the network transport are independent choices: first choose one
-server or multiple servers, then choose a reverse proxy or direct TLS below.
+The server always runs behind Caddy. The `caddy_reverse_proxy.is_dev` setting
+selects the development or production Caddyfile. The number of server instances
+and the load-balancer role are separate deployment choices.
+The JSON fragments below are partial; merge them into the configuration file
+created on first launch. Set `is_dev` to `false` when following the production
+examples.
 
 #### Using the bundled Caddy reverse proxy
 
-The app can start Caddy as its HTTPS reverse proxy. Enable it with
-`security.reverse_proxy: true`, then select the Caddyfile with
-`caddy_reverse_proxy.is_dev`:
+The app downloads the matching Caddy binary if needed and starts Caddy
+automatically. Caddy terminates TLS and forwards WebSocket traffic to the local
+Python server. TLS is always used for client connections; the app no longer has
+certificate-file, certificate-generation, direct-TLS, or TLS-toggle settings.
 
 | Setting | Value | Effect |
 | --- | --- | --- |
-| `security.reverse_proxy` | `true` | Downloads the matching Caddy binary if needed and starts Caddy. |
-| `caddy_reverse_proxy.is_dev` | `true` | Uses `Caddy/Caddyfile-dev.caddy` for local development. |
+| `caddy_reverse_proxy.is_dev` | `true` | Uses `Caddy/Caddyfile-dev.caddy` for local development. This is the default. |
 | `caddy_reverse_proxy.is_dev` | `false` | Uses `Caddy/Caddyfile-prod.caddy` for production. |
 
 The app creates either Caddyfile if it is missing and leaves existing files
 unchanged. The binary is stored in `Caddy/caddy-server.exe` on Windows and
-`Caddy/caddy-server` on other supported systems. Caddy's stderr output is
-appended to `Caddy/caddy_error_log.txt`. Stop the Python server normally so it
-can stop the Caddy process it started.
+`Caddy/caddy-server` on other supported systems. Caddy output is appended to
+`Caddy/caddy_server_log.txt`. Stop the Python server normally so it can stop the
+Caddy process it started.
 
 ##### Development Caddy setup
 
-The default `Caddy/Caddyfile-dev.caddy` listens on `127.0.0.1:8443`, obtains a
+The default `Caddy/Caddyfile-dev.caddy` listens on `127.0.0.1:8443`, uses a
 certificate from Caddy's internal CA, and forwards requests to the app at
-`127.0.0.1:80`. Keep the app and Caddy listener settings aligned in
-`data/server_config.json`:
+`127.0.0.1:80`. The matching settings are:
 
 ```json
 {
@@ -236,10 +235,6 @@ certificate from Caddy's internal CA, and forwards requests to the app at
         "ip_address": "127.0.0.1",
         "port_number": 80,
         "address": "127.0.0.1:8443"
-    },
-    "security": {
-        "reverse_proxy": true,
-        "tls": true
     },
     "caddy_reverse_proxy": {
         "is_dev": true
@@ -249,22 +244,20 @@ certificate from Caddy's internal CA, and forwards requests to the app at
 
 This development listener is loopback-only, so clients must run on the same
 machine. Trust Caddy's local root certificate on each client that connects;
-otherwise HTTPS clients will reject the certificate. Caddy tries to install
-the root certificate automatically. On Windows, its default storage location
-is under `%AppData%\Caddy\pki\authorities\local\root.crt`. See Caddy's
+otherwise secure WebSocket clients will reject the certificate. Caddy tries to
+install the root certificate automatically. On Windows, its default storage
+location is under `%AppData%\Caddy\pki\authorities\local\root.crt`. See Caddy's
 [Local HTTPS documentation](https://caddyserver.com/docs/automatic-https#local-https)
 for trust-store details.
 
 ##### Production Caddy setup
 
-Before using `Caddy/Caddyfile-prod.caddy`, edit it and replace
-`YOUR_PUBLIC_IPV4` with the server's public IP address or DNS name, and replace
-`admin@example.com` with an email address for ACME certificate registration.
-The production template listens on public TCP port `3000` and forwards requests
-to the app at `127.0.0.1:5000`. Set the app's `general.ip_address` to
-`127.0.0.1`, `general.port_number` to `5000`, and `general.address` to the
-public host with port `3000`. Set `caddy_reverse_proxy.is_dev` to `false`. For
-example:
+Before using `Caddy/Caddyfile-prod.caddy`, edit its site address, `default_sni`,
+ACME contact email, and upstream to match your deployment. The current template
+uses public TCP port `3000` and forwards requests to the app at
+`127.0.0.1:5000`. Set the app's `general.ip_address` to `127.0.0.1`,
+`general.port_number` to `5000`, and `general.address` to the public host with
+port `3000`. Set `caddy_reverse_proxy.is_dev` to `false`. For example:
 
 ```json
 {
@@ -272,10 +265,6 @@ example:
         "ip_address": "127.0.0.1",
         "port_number": 5000,
         "address": "api.example.com:3000"
-    },
-    "security": {
-        "reverse_proxy": true,
-        "tls": true
     },
     "caddy_reverse_proxy": {
         "is_dev": false
@@ -287,11 +276,10 @@ Point public DNS at the server and configure both the VPS host firewall and any
 cloud firewall to allow inbound TCP connections on ports 80 and 443 for Caddy's
 ACME certificate validation and renewal, and port 3000 for clients to reach the
 reverse proxy. The supplied template requests Let's Encrypt's `shortlived`
-profile, whose certificates last about six days; keep Caddy running so it can
-renew them automatically. This profile also permits IP address certificates.
-Use the same public hostname or IP in the Caddyfile and `general.address`. Configure clients
-with that public address and port `3000`; loopback addresses are reachable only
-from the server machine. See Let's Encrypt's
+profile; keep Caddy running so it can renew certificates automatically. Use the
+same public hostname or IP in the Caddyfile and `general.address`. Configure
+clients with that public address and port `3000`; loopback addresses are
+reachable only from the server machine. See Let's Encrypt's
 [certificate profile information](https://letsencrypt.org/docs/profiles/) for
 details.
 
@@ -349,14 +337,14 @@ the available-server list. Set `is_load_balancer_node` to `true`.
 | Setting | Example | Purpose |
 | --- | --- | --- |
 | `server_id` | `server_1` | Identifies this instance in Firebase. |
-| `address` | `server.example.com:443` | Address clients use to reach this instance. |
+| `address` | `api.example.com:3000` | Public Caddy address clients use to reach this instance. |
 | `is_load_balancer_node` | `true` | Runs cleanup and server-ordering tasks. |
 
 ```json
 {
     "general": {
         "server_id": "server_1",
-        "address": "server.example.com:443",
+        "address": "api.example.com:3000",
         "is_load_balancer_node": true
     }
 }
@@ -373,7 +361,7 @@ so they share server and transcription-job data consistently.
 | Setting | Coordinator | Worker |
 | --- | --- | --- |
 | `server_id` | `server_a` | `server_b` |
-| `address` | `server-a.example.com:443` | `server-b.example.com:443` |
+| `address` | `server-a.example.com:3000` | `server-b.example.com:3000` |
 | `is_load_balancer_node` | `true` | `false` |
 | `database_url` | Same Firebase database URL | Same Firebase database URL |
 | `max_transcription_jobs_per_user` | Same limit | Same limit |
@@ -385,7 +373,7 @@ Save a separate full configuration file on each machine. For example, the
 {
     "general": {
         "server_id": "server_a",
-        "address": "server-a.example.com:443",
+        "address": "server-a.example.com:3000",
         "is_load_balancer_node": true
     }
 }
@@ -395,96 +383,45 @@ Save a separate full configuration file on each machine. For example, the
 {
     "general": {
         "server_id": "server_b",
-        "address": "server-b.example.com:443",
+        "address": "server-b.example.com:3000",
         "is_load_balancer_node": false
     }
 }
 ```
 
-#### Running behind a reverse proxy
+#### Connection and TLS behavior
 
-You can place a reverse proxy in front of either deployment. The proxy accepts
-the public connection and forwards it to the app. Set `address` to the public
-host and port, and set `ip_address` and `port_number` to the app's listener
-behind the proxy. Enable `reverse_proxy`; the proxy should terminate TLS and set
-`X-Forwarded-For` to the actual client address. Set `tls` to `true` when the
-public endpoint uses HTTPS/WSS. The app does not terminate TLS in reverse-proxy
-mode, so the proxy-to-app connection can use plain HTTP/WebSocket on a trusted
-network.
+Clients always connect to the public Caddy address using secure WebSockets
+(`wss://`). The `address` value contains only the host and port; clients should
+use `wss://` when opening the connection. Caddy terminates TLS and forwards the
+connection to the Python app over the local network. The app uses
+`X-Forwarded-For`, which Caddy sets, to determine the client IP for rate
+limiting.
 
-| Setting | Example | Purpose |
+| Connection | Development default | Production template |
 | --- | --- | --- |
-| `ip_address` | `127.0.0.1` | App's local listener, reachable by the proxy. |
-| `port_number` | `80` | Port the proxy forwards requests to. |
-| `address` | `api.example.com:443` | Public address clients use. |
-| `reverse_proxy` | `true` | Uses the forwarded client IP for rate limiting. |
-| `encrypt_stream` | `false` | TLS is terminated by the proxy. |
-| `tls` | `true` | Tells clients to use a secure WebSocket. |
+| Client to Caddy | `wss://127.0.0.1:8443` | `wss://api.example.com:3000` |
+| Caddy to Python app | `ws://127.0.0.1:80` | `ws://127.0.0.1:5000` |
+| TLS certificate management | Caddy internal CA | Caddy ACME issuer |
 
-```json
-{
-    "general": {
-        "ip_address": "127.0.0.1",
-        "port_number": 80,
-        "address": "api.example.com:443"
-    },
-    "security": {
-        "reverse_proxy": true,
-        "encrypt_stream": false,
-        "tls": true
-    }
-}
-```
-
-#### Direct TLS without a reverse proxy
-
-If clients connect directly to the app, the app itself must terminate TLS. Set
-`reverse_proxy` to `false`, `encrypt_stream` to `true`, and `tls` to `true`.
-Provide a trusted certificate and private key in the `data` directory using the
-filenames set by `server_cert` and `private_key`. Self-signed certificates are
-available for development or testing, but production clients should use a
-certificate trusted for the server's public hostname.
-
-| Setting | Example | Purpose |
-| --- | --- | --- |
-| `ip_address` | `0.0.0.0` | Listens on the server's network interfaces. |
-| `port_number` | `443` | TLS port clients connect to. |
-| `address` | `server.example.com:443` | Public server address clients use. |
-| `reverse_proxy` | `false` | No reverse proxy is forwarding connections. |
-| `encrypt_stream` | `true` | Enables TLS on the app's WebSocket listener. |
-| `tls` | `true` | Tells clients to use a secure WebSocket. |
-| `server_cert` / `private_key` | `server_cert.pem` / `private_key.pem` | Certificate and key files in `data`. |
-
-```json
-{
-    "general": {
-        "ip_address": "0.0.0.0",
-        "port_number": 443,
-        "address": "server.example.com:443"
-    },
-    "security": {
-        "reverse_proxy": false,
-        "encrypt_stream": true,
-        "tls": true,
-        "generate_self_signed": false,
-        "server_cert": "server_cert.pem",
-        "private_key": "private_key.pem"
-    }
-}
-```
+The Python app does not load or generate TLS certificates. Caddy manages the
+certificates needed for its HTTPS/WSS listener. The development certificate is
+issued by Caddy's local CA; the production configuration uses ACME.
 
 ### Configuration reference
 
 #### General
 
-**`ip_address`** sets the address where the server listens for transcription requests.
+**`ip_address`** sets the address where the Python server listens for
+transcription requests. Keep it local when Caddy runs on the same machine.
 
-**`port_number`** sets the port where the server listens for client requests.
+**`port_number`** sets the backend port where the Python server listens. The
+default development Caddyfile forwards to `127.0.0.1:80`.
 
-**`address`** is the address clients use to reach the server. It can be the
-server's IP address, a DNS name that points to that IP, or a reverse proxy
-address. The `ip_address` and `port_number` values determine where the server
-application itself listens.
+**`address`** is the public Caddy host and port that clients use to reach the
+server. Store it without a scheme, such as `127.0.0.1:8443` or
+`api.example.com:3000`; clients connect using `wss://`. The `ip_address` and
+`port_number` values determine where the Python app listens behind Caddy.
 
 **`is_load_balancer_node`** determines whether this instance performs load
 balancing tasks, such as removing expired server records and ordering available
@@ -495,35 +432,20 @@ this on **only one instance**.
 
 **`server_id`** is the required identifier for this server instance.
 
-#### Security
+**`max_requests_per_minute`** limits new WebSocket connections from each client
+IP during a rolling 60-second window. It defaults to `100`. The app uses the
+client IP forwarded by Caddy; connections over the limit are closed with WebSocket
+status code `1013`. The counter is kept in memory and resets when the app restarts.
 
-**`encrypt_stream`** controls whether the server uses a secure WebSocket
-connection (`wss://`) or an unencrypted one (`ws://`). This setting is ignored
-when a reverse proxy is configured. Without a reverse proxy, enable it when the
-server listens on an address other than loopback.
+#### Caddy reverse proxy
 
-**`tls`** controls whether the client connects using a secure WebSocket. Enable
-it for production deployments; unencrypted WebSocket connections are restricted
-to loopback addresses during development.
+**`caddy_reverse_proxy.is_dev`** selects which Caddyfile to use. It defaults to
+`true`, which selects the development Caddyfile. Set it to `false` to use the
+production Caddyfile. Caddy is always started; this setting does not enable or
+disable the reverse proxy or TLS.
 
-**`encrypt_cert`** controls whether the generated private key is password
-protected. When enabled, the app stores the password in Google Cloud Secret
-Manager, so Secret Manager must be configured and accessible to the app.
-
-**`generate_self_signed`** tells the app to create a self-signed certificate and
-private key when the configured certificate file does not already exist. If it
-is disabled and the certificate file is missing, startup fails.
-
-**`server_cert`** is the certificate filename in the app's `data` directory.
-
-**`private_key`** is the private key filename in the app's `data` directory.
-If you use a custom certificate with a password-protected private key, create a
-Google Cloud Secret Manager secret named `private_key_password` and set its
-value to the private key's password.
-
-**`reverse_proxy`** tells the app it is behind a reverse proxy. When enabled,
-the app uses the first address in the `X-Forwarded-For` header for client IP
-rate limiting, falling back to the connection address if the header is absent.
+TLS is always used between clients and Caddy. Caddy manages the required
+certificates; the Python app has no certificate or TLS configuration options.
 
 #### Transcription
 

@@ -467,12 +467,11 @@ function Home() {
 
       getAvailableServer().then((result) => {
         if (result.isSucessful) {
-          const [address, protocol] = result.payload;
+          const address = result.payload;
 
           console.log("address: " + address)
-          console.log("protocol: " + protocol)
 
-          webSocketStreaming?.postMessage([address, protocol]);
+          webSocketStreaming?.postMessage(address);
           webSocketStreamingRef.current = webSocketStreaming;
         }
         else {

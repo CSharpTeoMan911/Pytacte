@@ -8,15 +8,9 @@ def make_config():
         ip_address="127.0.0.1",
         port_number=8080,
         address="127.0.0.1:8080",
-        encrypt_stream=True,
-        tls=False,
-        encrypt_cert=True,
-        generate_self_signed=True,
-        server_cert="server.pem",
-        private_key="private.pem",
         max_transcription_jobs_per_user=5,
-        reverse_proxy=True,
         is_load_balancer_node=False,
+        max_requests_per_minute=45,
         database_url="https://example.firebaseio.com",
         server_id="server-test",
         is_dev=False,
@@ -32,15 +26,7 @@ def expected_config():
             "is_load_balancer_node": False,
             "database_url": "https://example.firebaseio.com",
             "server_id": "server-test",
-        },
-        "security": {
-            "encrypt_stream": True,
-            "tls": False,
-            "encrypt_cert": True,
-            "generate_self_signed": True,
-            "server_cert": "server.pem",
-            "private_key": "private.pem",
-            "reverse_proxy": True,
+            "max_requests_per_minute": 45,
         },
         "transcription": {"max_transcription_jobs_per_user": 5},
         "firebase": {"firebase_key_name": "KEY_NAME"},
@@ -62,6 +48,17 @@ def test_config_stores_named_configuration_values():
     config = make_config()
 
     assert config.config == expected_config()
+
+
+def test_config_defaults_to_caddy_tls_endpoint_and_backend():
+    config = Config()
+
+    assert config.config["general"]["ip_address"] == "127.0.0.1"
+    assert config.config["general"]["port_number"] == 80
+    assert config.config["general"]["address"] == "127.0.0.1:8443"
+    assert config.config["general"]["max_requests_per_minute"] == 100
+    assert config.config["caddy_reverse_proxy"] == {"is_dev": True}
+    assert "security" not in config.config
 
 
 def test_create_config_file_writes_json_configuration(tmp_path):

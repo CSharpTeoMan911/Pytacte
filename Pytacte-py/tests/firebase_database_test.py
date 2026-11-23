@@ -80,7 +80,6 @@ def test_get_server_availability_returns_only_the_first_record(database, monkeyp
         "server_id": "server-1",
         "server_address": "192.0.2.1",
         "load_balancer": False,
-        "tls": True,
         "cpu_usage": 12.5,
         "last_heartbeat": 202611151234,
     }
@@ -149,7 +148,6 @@ def test_create_server_availability_adds_heartbeat(database, monkeypatch):
     data = ServerAvailabilityDTO(
         server_id="server-1",
         server_address="192.0.2.1:443",
-        tls=True,
         cpu_usage=12.5,
         load_balancer=False,
     )
@@ -178,7 +176,6 @@ def test_create_server_availability_adds_heartbeat(database, monkeypatch):
         {
             "server_id": "server-1",
             "server_address": "192.0.2.1:443",
-            "tls": True,
             "cpu_usage": 12.5,
         }
     )
@@ -227,11 +224,9 @@ def test_heartbeat_methods_write_utc_date(
 
 def test_server_heartbeat_updates_existing_client_record(database, monkeypatch):
     expected_heartbeat = 202611151234
-    data = ServerAvailabilityDTO(
-        "server-1", "192.0.2.1:443", False, True, 25.5
-    )
+    data = ServerAvailabilityDTO("server-1", "192.0.2.1:443", False, 25.5)
     stored_server = ServerAvailabilityDTO(
-        "server-1", "192.0.2.1:443", False, True, 25.5, expected_heartbeat
+        "server-1", "192.0.2.1:443", False, 25.5, expected_heartbeat
     )
     monkeypatch.setattr(
         database, "__current_heartbeat__", lambda: expected_heartbeat
@@ -259,7 +254,6 @@ def test_server_heartbeat_updates_existing_client_record(database, monkeypatch):
             "server_id": "server-1",
             "server_address": "192.0.2.1:443",
             "load_balancer": False,
-            "tls": True,
             "cpu_usage": 25.5,
             "last_heartbeat": expected_heartbeat,
         },
@@ -268,7 +262,6 @@ def test_server_heartbeat_updates_existing_client_record(database, monkeypatch):
         {
             "server_id": "server-1",
             "server_address": "192.0.2.1:443",
-            "tls": True,
             "cpu_usage": 25.5,
         }
     )
@@ -277,7 +270,10 @@ def test_server_heartbeat_updates_existing_client_record(database, monkeypatch):
 
 def test_server_heartbeat_creates_missing_client_record(database, monkeypatch):
     data = ServerAvailabilityDTO(
-        "server-1", "192.0.2.1:443", False, True, 25.5
+        server_id="server-1",
+        server_address="192.0.2.1:443",
+        load_balancer=False,
+        cpu_usage=25.5,
     )
     monkeypatch.setattr(database, "__update__", MagicMock())
     monkeypatch.setattr(database, "get_server_availability", lambda _server_id: data)
@@ -296,7 +292,6 @@ def test_server_heartbeat_creates_missing_client_record(database, monkeypatch):
         {
             "server_id": "server-1",
             "server_address": "192.0.2.1:443",
-            "tls": True,
             "cpu_usage": 25.5,
         }
     )
@@ -308,7 +303,6 @@ def test_delete_orphan_client_servers_deletes_missing_server(database, monkeypat
     client_record = {
         "server_id": orphan_id,
         "server_address": "192.0.2.1:443",
-        "tls": True,
         "cpu_usage": 10.0,
     }
     client_page = {orphan_id: client_record}
@@ -351,7 +345,6 @@ def test_create_server_availability_returns_failure_for_duplicate(database, monk
     data = ServerAvailabilityDTO(
         server_id="server-1",
         server_address="192.0.2.1:443",
-        tls=True,
         cpu_usage=12.5,
         load_balancer=False,
     )

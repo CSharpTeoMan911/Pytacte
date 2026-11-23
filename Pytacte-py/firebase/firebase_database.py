@@ -50,7 +50,6 @@ class ServerAvailabilityDTO:
     server_id: str
     server_address: str
     load_balancer: bool
-    tls: bool
     cpu_usage: float
     last_heartbeat: int | None = None
 
@@ -61,8 +60,6 @@ class ServerAvailabilityDTO:
             raise ValueError("server_address must not be empty")
         if not isinstance(self.load_balancer, bool):
             raise TypeError("load_balancer must be a boolean")
-        if not isinstance(self.tls, bool):
-            raise TypeError("tls must be a boolean")
         if isinstance(self.cpu_usage, bool) or not isinstance(
             self.cpu_usage, (int, float)
         ):
@@ -79,7 +76,6 @@ class ServerAvailabilityDTO:
             "server_id": self.server_id,
             "server_address": self.server_address,
             "load_balancer": self.load_balancer,
-            "tls": self.tls,
             "cpu_usage": self.cpu_usage,
         }
         if self.last_heartbeat is not None:
@@ -93,7 +89,6 @@ class ClientAvailablePytacteServersDTO:
 
     server_id: str
     server_address: str
-    tls: bool
     cpu_usage: float
 
     def __post_init__(self) -> None:
@@ -101,8 +96,6 @@ class ClientAvailablePytacteServersDTO:
             raise ValueError("server_id must not be empty")
         if not self.server_address:
             raise ValueError("server_address must not be empty")
-        if not isinstance(self.tls, bool):
-            raise TypeError("tls must be a boolean")
         if isinstance(self.cpu_usage, bool) or not isinstance(
             self.cpu_usage, (int, float)
         ):
@@ -114,7 +107,6 @@ class ClientAvailablePytacteServersDTO:
         return {
             "server_id": self.server_id,
             "server_address": self.server_address,
-            "tls": self.tls,
             "cpu_usage": self.cpu_usage,
         }
 
@@ -264,7 +256,6 @@ class FirebaseDatabase:
             client_avaliable_severs = ClientAvailablePytacteServersDTO(
                 server_id=record.server_id,
                 server_address=record.server_address,
-                tls=record.tls,
                 cpu_usage=record.cpu_usage,
             )
             self.__reference__(
@@ -418,7 +409,6 @@ class FirebaseDatabase:
             client_data = ClientAvailablePytacteServersDTO(
                 server_id=record.server_id,
                 server_address=record.server_address,
-                tls=record.tls,
                 cpu_usage=float(data.cpu_usage),
             )
             try:
@@ -824,12 +814,9 @@ class FirebaseDatabase:
         server_id = record.get("server_id")
         server_address = record.get("server_address")
         load_balancer = record.get("load_balancer")
-        tls = record.get("tls")
         cpu_usage = record.get("cpu_usage")
         heartbeat = record.get("last_heartbeat")
         if not isinstance(server_id, str) or not isinstance(server_address, str):
-            return None
-        if not isinstance(load_balancer, bool) or not isinstance(tls, bool):
             return None
         if isinstance(cpu_usage, bool) or not isinstance(cpu_usage, (int, float)):
             return None
@@ -837,11 +824,13 @@ class FirebaseDatabase:
             isinstance(heartbeat, bool) or not isinstance(heartbeat, int)
         ):
             return None
+        if not isinstance(load_balancer, bool):
+            return None
+        
         return ServerAvailabilityDTO(
             server_id=server_id,
             server_address=server_address,
             load_balancer=load_balancer,
-            tls=tls,
             cpu_usage=float(cpu_usage),
             last_heartbeat=heartbeat,
         )
