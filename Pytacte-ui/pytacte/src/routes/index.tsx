@@ -692,7 +692,7 @@ function Home() {
       </style>
 
       {accountPanelOpen && (
-        <AccountsPanel email={accountEmail} provider={accountSignInMethod} backgroundColor='rgba(0,61,110,0.6)' secondaryColor='rgb(0,61,110)' opacity={1} elevation={3} zIndex={3} setOpenPanel={setAccountPanelOpen} setDeleteAccount={setDeleteAccount} />
+        <AccountsPanel email={accountEmail} provider={accountSignInMethod} backgroundColor='rgba(0, 0, 0, 0.7)' secondaryColor='#cccccc' opacity={1} elevation={3} zIndex={3} setOpenPanel={setAccountPanelOpen} setDeleteAccount={setDeleteAccount} />
       )}
 
       {notificationOpen && (

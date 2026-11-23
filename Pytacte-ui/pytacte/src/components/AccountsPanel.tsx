@@ -24,12 +24,12 @@ type Props = {
 const accountFieldSx = {
     '& .MuiOutlinedInput-root': {
         backgroundColor: 'transparent',
-        color: '#50aefc',
+        color: '#001e3a',
         fontFamily: 'Roboto Mono, monospace',
         '& fieldset, &:hover fieldset, &.Mui-focused fieldset': { border: 'none' },
     },
     '& .MuiInputBase-input': {
-        fontSize: '1rem',
+        fontSize: '0.9em',
         fontWeight: 600,
         cursor: `url("${textCursor}") 12 12, text`,
         userSelect: 'none',
@@ -72,9 +72,11 @@ export default function AccountsPanel({ email, provider, backgroundColor, second
                 backgroundColor: secondaryColor,
                 opacity: opacity,
                 zIndex: zIndex,
-                borderRadius: '10px',
+                borderRadius: '5px',
                 overflow: 'hidden',
-                boxShadow:'1px 0px 10px #00203a'
+                borderWidth: '0px',
+                borderColor:'transparent',
+                boxShadow:'1px 0px 10px #cccccc'
             }}>
 
             {/* <img className="auth-google-logo" src={googleLogo} alt="" /> */}
@@ -82,18 +84,18 @@ export default function AccountsPanel({ email, provider, backgroundColor, second
                 <IconButton aria-label="Expand off" color="primary" sx={{
                     height: 'fit-content',
                     alignSelf: 'center',
-                    color: '#0081fa'
+                    color: '#001e3a'
                 }} onClick={() => { setOpenPanel(false); }} >
                     {
                         <ClosePanel sx={{
-                            height: '25px',
-                            width: '25px'
+                            height: '20px',
+                            width: '20px'
                         }} />
                     }
                 </IconButton>
             </div>
 
-            <Divider sx={{ borderColor: '#148cfc' }} />
+            <Divider sx={{ borderColor: '#001e3a' }} />
 
             <div style={{ display: 'flex', flexDirection: 'column', marginTop: '10px', alignContent: 'left', gap: '16px', padding: '4px 8px 8px' }}>
                 <div style={{ display: 'flex', flexDirection: 'row', width: 'fit-content' }}>
@@ -103,16 +105,16 @@ export default function AccountsPanel({ email, provider, backgroundColor, second
                         variant='outlined'
                         size='small'
                         slotProps={{ htmlInput: { readOnly: true }, inputLabel: { shrink: true } }}
-                        sx={{ ...accountFieldSx, width:`${String((email ? email.length - 7 : 0))}em`, maxWidth:'300px', alignSelf: 'center' }}
+                        sx={{ ...accountFieldSx, width:`${String((email ? email.length : 0))}em`, maxWidth:'250px', alignSelf: 'center' }}
                     />
 
-                    <img style={{ width: '22px', height: '22px', alignSelf: 'center', marginLeft: '5px' }} className="auth-google-logo" src={provider == 'Gmail' ? googleLogo : mail} alt="" />
+                    <img style={{ width: '18px', height: '18px', alignSelf: 'center', marginLeft: '2px' }} className="auth-google-logo" src={provider == 'Gmail' ? googleLogo : mail} alt="" />
 
                 </div>
             </div>
 
-            <Button sx={{ textTransform: 'none', color: 'rgb(0,61,110)', fontSize: '1em', fontWeight: 'bold', fontFamily: 'Roboto Mono, monospace', 
-                        backgroundColor: '#50aefc', alignSelf: 'center', marginTop: '10px', borderRadius: '0px', height: '40px', paddingTop:'22px', 
+            <Button sx={{ textTransform: 'none', color: '#cccccc', fontSize: '0.75em',fontWeight:'heavy', fontFamily: 'Roboto Mono, monospace', 
+                        backgroundColor: '#001e3a', alignSelf: 'center', marginTop: '10px', borderRadius: '0px', height: '30px', paddingTop:'20px', 
                         paddingBottom:'22px'}} 
                         type="button" variant="contained" fullWidth 
                         onClick={() => { setDeleteAccount(true); }}>
