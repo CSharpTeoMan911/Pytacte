@@ -67,7 +67,7 @@ function RouteComponent() {
                 if (cancelled) return
 
                 const baseViewport = page.getViewport({ scale: 1 })
-                const scale = pdfContainerWidth / baseViewport.width
+                const scale = pdfContainerWidth / baseViewport.width / 2
                 const viewport = page.getViewport({ scale })
                 const pixelRatio = window.devicePixelRatio || 1
                 const context = canvas.getContext('2d')
